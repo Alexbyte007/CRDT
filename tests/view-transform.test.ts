@@ -154,6 +154,163 @@ describe("privacy view transform", () => {
       timestamp: 30
     });
   });
+
+  it("allows admins to update node audience without exposing acl controls to ordinary users", () => {
+    const crdt = createSampleDocument();
+    const admin = user("u-admin");
+    const member = user("u-dev-member");
+
+    const adminNode = findViewNode(getView(crdt, admin, { now: 31 }).roots, "node-public");
+    const memberNode = findViewNode(getView(crdt, member, { now: 31 }).roots, "node-public");
+
+    expect(adminNode?.acl).toEqual({
+      visibility: "public",
+      allowedRoles: ["admin", "manager", "member", "guest"]
+    });
+    expect(adminNode?.permissions.canEditAcl).toBe(true);
+    expect(memberNode?.acl).toBeUndefined();
+    expect(memberNode?.permissions.canEditAcl).toBe(false);
+
+    const fullOperation = putOperation(
+      crdt,
+      admin,
+      {
+        type: "updateAcl",
+        nodeId: "node-public",
+        aclPatch: {
+          visibility: "restricted",
+          allowedRoles: ["admin", "manager"]
+        }
+      },
+      { now: 32 }
+    );
+
+    expect(fullOperation).toEqual({
+      type: "updateAcl",
+      nodeId: "node-public",
+      aclPatch: {
+        visibility: "restricted",
+        allowedRoles: ["admin", "manager"]
+      },
+      actorId: "u-admin",
+      timestamp: 32
+    });
+
+    applyFullDocOperation(crdt, fullOperation);
+    expect(getNodeSnapshot(crdt, "node-public")?.acl).toMatchObject({
+      visibility: "restricted",
+      allowedRoles: ["admin", "manager"]
+    });
+    expect(findViewNode(getView(crdt, user("u-dev-manager"), { now: 33 }).roots, "node-public")).toBeDefined();
+    expect(findViewNode(getView(crdt, user("u-dev-member"), { now: 33 }).roots, "node-public")).toBeUndefined();
+    expect(findViewNode(getView(crdt, user("u-guest"), { now: 33 }).roots, "node-public")).toBeUndefined();
+    expect(() =>
+      validateViewOperation(crdt, member, {
+        type: "updateAcl",
+        nodeId: "node-public",
+        aclPatch: {
+          visibility: "public"
+        }
+      })
+    ).toThrow(AccessControlError);
+  });
+
+  it("uses restricted-path virtual nodes for visible descendants under invisible parents", () => {
+    const crdt = createSampleDocument();
+
+    applyFullDocOperation(crdt, {
+      type: "addNode",
+      parentId: "node-root",
+      actorId: "u-admin",
+      timestamp: 40,
+      node: {
+        id: "node-private-folder",
+        type: "folder",
+        title: "管理员私有目录",
+        content: "普通用户不应看到这个目录内容。",
+        attrs: {
+          department: "finance",
+          ownerId: "u-admin",
+          tags: ["private"],
+          status: "active"
+        },
+        acl: {
+          visibility: "private",
+          allowedRoles: ["admin"],
+          editableRoles: ["admin"],
+          allowedUsers: ["u-admin"],
+          deniedUsers: []
+        },
+        createdBy: "u-admin"
+      }
+    });
+    applyFullDocOperation(crdt, {
+      type: "addNode",
+      parentId: "node-private-folder",
+      actorId: "u-admin",
+      timestamp: 41,
+      node: {
+        id: "node-public-child",
+        type: "doc",
+        title: "公开子文档",
+        content: "虽然父目录受限，但这个子文档公开可见。",
+        attrs: {
+          department: "all",
+          ownerId: "u-admin",
+          tags: ["public"],
+          status: "active"
+        },
+        acl: {
+          visibility: "public",
+          allowedRoles: ["admin", "manager", "member", "guest"],
+          editableRoles: ["admin"],
+          allowedUsers: [],
+          deniedUsers: []
+        },
+        createdBy: "u-admin"
+      }
+    });
+
+    const adminView = getView(crdt, user("u-admin"), { now: 50 });
+    const guestView = getView(crdt, user("u-guest"), { now: 50 });
+    const privateFolderForAdmin = findViewNode(adminView.roots, "node-private-folder");
+    const restrictedPathForGuest = findVirtualNode(guestView.roots, "restrictedPath");
+    const publicChildForGuest = findViewNode(guestView.roots, "node-public-child");
+
+    expect(privateFolderForAdmin).toMatchObject({
+      id: "node-private-folder",
+      title: "管理员私有目录"
+    });
+    expect(privateFolderForAdmin?.virtual).not.toBe(true);
+    expect(findViewNode(adminView.roots, "node-public-child")).toBeDefined();
+
+    expect(findViewNode(guestView.roots, "node-private-folder")).toBeUndefined();
+    expect(JSON.stringify(guestView)).not.toContain("管理员私有目录");
+    expect(JSON.stringify(guestView)).not.toContain("普通用户不应看到这个目录内容");
+    expect(JSON.stringify(guestView)).not.toContain("finance");
+
+    expect(restrictedPathForGuest).toMatchObject({
+      id: "virtual-restricted-node-private-folder",
+      title: "受限路径",
+      virtual: true,
+      virtualReason: "restrictedPath",
+      permissions: {
+        canAddChild: false,
+        canDelete: false,
+        canRename: false,
+        canEditContent: false,
+        canEditAttrs: false,
+        canEditAcl: false
+      }
+    });
+    expect(restrictedPathForGuest?.content).toBeUndefined();
+    expect(restrictedPathForGuest?.attrs).toBeUndefined();
+    expect(publicChildForGuest).toMatchObject({
+      id: "node-public-child",
+      title: "公开子文档",
+      content: "虽然父目录受限，但这个子文档公开可见。"
+    });
+  });
 });
 
 function user(id: string): User {
@@ -174,6 +331,22 @@ function findViewNode(nodes: ViewNode[], nodeId: string): ViewNode | undefined {
       return node;
     }
     const child = findViewNode(node.children, nodeId);
+    if (child) {
+      return child;
+    }
+  }
+  return undefined;
+}
+
+function findVirtualNode(
+  nodes: ViewNode[],
+  reason: NonNullable<ViewNode["virtualReason"]>
+): ViewNode | undefined {
+  for (const node of nodes) {
+    if (node.virtual && node.virtualReason === reason) {
+      return node;
+    }
+    const child = findVirtualNode(node.children, reason);
     if (child) {
       return child;
     }

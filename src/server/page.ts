@@ -208,10 +208,17 @@ export function renderHomePage(): string {
         margin-top: 10px;
       }
 
-      .node-actions button {
+        .node-actions button {
         width: auto;
         padding: 6px 9px;
         font-size: 12px;
+      }
+
+      .node-policy {
+        display: grid;
+        gap: 6px;
+        margin-top: 10px;
+        max-width: 260px;
       }
 
       .meta {
@@ -526,6 +533,26 @@ export function renderHomePage(): string {
         meta.textContent = node.id + " · " + node.type + " · " + permissionText(node.permissions);
         box.appendChild(meta);
 
+        if (node.permissions.canEditAcl && node.acl && node.acl.visibility) {
+          const policy = document.createElement("label");
+          policy.className = "node-policy";
+          policy.textContent = "谁能看";
+          const audience = document.createElement("select");
+          audience.dataset.nodeId = node.id;
+          audience.dataset.field = "audience";
+          audience.innerHTML =
+            '<option value="all">所有人可见</option>' +
+            '<option value="admin">仅管理员可见</option>' +
+            '<option value="admin-manager">管理员和研发经理可见</option>' +
+            '<option value="dev-team">研发团队可见</option>';
+          audience.value = audienceFromAcl(node.acl);
+          audience.addEventListener("change", () =>
+            updateNodeAudience(node.id, audience.value).catch((error) => setStatus(error.message))
+          );
+          policy.appendChild(audience);
+          box.appendChild(policy);
+        }
+
         if (node.permissions.canEditContent) {
           const contentInput = document.createElement("textarea");
           contentInput.value = draft.content;
@@ -742,6 +769,53 @@ export function renderHomePage(): string {
         if (!window.confirm("确定删除当前节点吗？")) return;
         await submitOperation({ type: "deleteNode", nodeId });
         delete state.editing.drafts[nodeId];
+      }
+
+      function audienceFromAcl(acl) {
+        const roles = acl.allowedRoles || [];
+        if (acl.visibility === "public") return "all";
+        if (acl.visibility === "restricted" && sameRoles(roles, ["admin"])) return "admin";
+        if (acl.visibility === "restricted" && sameRoles(roles, ["admin", "manager"])) return "admin-manager";
+        if (acl.visibility === "department" && sameRoles(roles, ["admin", "manager", "member"])) return "dev-team";
+        return "all";
+      }
+
+      function sameRoles(left, right) {
+        return left.length === right.length && right.every((role) => left.includes(role));
+      }
+
+      function aclPatchFromAudience(audience) {
+        if (audience === "admin") {
+          return {
+            visibility: "restricted",
+            allowedRoles: ["admin"]
+          };
+        }
+        if (audience === "admin-manager") {
+          return {
+            visibility: "restricted",
+            allowedRoles: ["admin", "manager"]
+          };
+        }
+        if (audience === "dev-team") {
+          return {
+            visibility: "department",
+            allowedRoles: ["admin", "manager", "member"]
+          };
+        }
+        return {
+          visibility: "public",
+          allowedRoles: ["admin", "manager", "member", "guest"]
+        };
+      }
+
+      async function updateNodeAudience(nodeId, audience) {
+        await submitOperation({
+          type: "updateAcl",
+          nodeId,
+          aclPatch: aclPatchFromAudience(audience)
+        });
+        setStatus("节点可见对象已更新");
       }
 
       async function submitOperation(operation) {

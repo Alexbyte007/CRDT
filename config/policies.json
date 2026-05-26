@@ -94,7 +94,7 @@
       {
         "name": "admin can perform all operations",
         "match": "user.role == 'admin'",
-        "operations": ["addNode", "deleteNode", "renameNode", "updateContent", "updateAttrs"]
+        "operations": ["addNode", "deleteNode", "renameNode", "updateContent", "updateAttrs", "updateAcl"]
       },
       {
         "name": "manager can perform all operations on editable visible nodes",

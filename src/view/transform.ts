@@ -3,6 +3,7 @@ import {
   type AddNodeOperation,
   type FullDocOperation,
   type NewTreeNode,
+  type NodeAcl,
   type NodeAttrs,
   type NodeId,
   type TreeNodeSnapshot,
@@ -80,6 +81,10 @@ export function validateViewOperation(
       }
       return;
     }
+    case "updateAcl":
+      ensureCanEdit(user, target, "updateAcl", policyEngine);
+      sanitizeAclPatch(operation.aclPatch);
+      return;
     default:
       assertNever(operation);
   }
@@ -133,6 +138,14 @@ export function putOperation(
         timestamp
       };
     }
+    case "updateAcl":
+      return {
+        type: "updateAcl",
+        nodeId: operation.nodeId,
+        aclPatch: sanitizeAclPatch(operation.aclPatch),
+        actorId: user.id,
+        timestamp
+      };
     default:
       assertNever(operation);
   }
@@ -146,8 +159,18 @@ function projectNode(
 ): ViewNode | null {
   const node = nodes[nodeId];
 
-  if (!node || !policyEngine.canViewNode(user, node)) {
+  if (!node) {
     return null;
+  }
+
+  const children = projectChildren(node, user, nodes, policyEngine);
+
+  if (!policyEngine.canViewNode(user, node)) {
+    if (children.length === 0) {
+      return null;
+    }
+
+    return buildRestrictedPathNode(node, children);
   }
 
   const viewNode: ViewNode = {
@@ -155,7 +178,7 @@ function projectNode(
     parentId: node.parentId,
     type: node.type,
     title: node.title,
-    children: [],
+    children,
     permissions: buildViewPermissions(user, node, policyEngine)
   };
 
@@ -168,14 +191,56 @@ function projectNode(
     viewNode.attrs = attrs;
   }
 
-  for (const childId of node.children) {
-    const childView = projectNode(childId, user, nodes, policyEngine);
-    if (childView) {
-      viewNode.children.push(childView);
-    }
+  if (policyEngine.canEditNode(user, node, "updateAcl")) {
+    viewNode.acl = {
+      visibility: node.acl.visibility,
+      allowedRoles: node.acl.allowedRoles
+    };
   }
 
   return viewNode;
+}
+
+function projectChildren(
+  node: TreeNodeSnapshot,
+  user: User,
+  nodes: Record<NodeId, TreeNodeSnapshot>,
+  policyEngine: PolicyEngine
+): ViewNode[] {
+  const children: ViewNode[] = [];
+
+  for (const childId of node.children) {
+    const childView = projectNode(childId, user, nodes, policyEngine);
+    if (childView) {
+      children.push(childView);
+    }
+  }
+
+  return children;
+}
+
+function buildRestrictedPathNode(node: TreeNodeSnapshot, children: ViewNode[]): ViewNode {
+  return {
+    id: `virtual-restricted-${node.id}`,
+    parentId: node.parentId,
+    type: "folder",
+    title: "受限路径",
+    children,
+    permissions: buildNoPermissions(),
+    virtual: true,
+    virtualReason: "restrictedPath"
+  };
+}
+
+function buildNoPermissions(): ViewPermissions {
+  return {
+    canAddChild: false,
+    canDelete: false,
+    canRename: false,
+    canEditContent: false,
+    canEditAttrs: false,
+    canEditAcl: false
+  };
 }
 
 function sanitizeNodeAttrs(
@@ -204,8 +269,34 @@ function buildViewPermissions(
     canDelete: policyEngine.canEditNode(user, node, "deleteNode"),
     canRename: policyEngine.canEditNode(user, node, "renameNode"),
     canEditContent: policyEngine.canEditNode(user, node, "updateContent"),
-    canEditAttrs: policyEngine.canEditNode(user, node, "updateAttrs")
+    canEditAttrs: policyEngine.canEditNode(user, node, "updateAttrs"),
+    canEditAcl: policyEngine.canEditNode(user, node, "updateAcl")
   };
+}
+
+function sanitizeAclPatch(
+  aclPatch: Pick<Partial<NodeAcl>, "visibility" | "allowedRoles">
+): Pick<Partial<NodeAcl>, "visibility" | "allowedRoles"> {
+  const result: Pick<Partial<NodeAcl>, "visibility" | "allowedRoles"> = {};
+  if (aclPatch.visibility !== undefined) {
+    if (!["public", "department", "private", "restricted"].includes(aclPatch.visibility)) {
+      throw new AccessControlError(`Unsupported node visibility: ${aclPatch.visibility}`);
+    }
+    result.visibility = aclPatch.visibility;
+  }
+  if (aclPatch.allowedRoles !== undefined) {
+    const allowedRoles = aclPatch.allowedRoles;
+    if (!Array.isArray(allowedRoles)) {
+      throw new AccessControlError("allowedRoles must be an array.");
+    }
+    for (const role of allowedRoles) {
+      if (!["admin", "manager", "member", "guest"].includes(role)) {
+        throw new AccessControlError(`Unsupported allowed role: ${role}`);
+      }
+    }
+    result.allowedRoles = allowedRoles;
+  }
+  return result;
 }
 
 function getOperationTarget(

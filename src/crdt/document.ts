@@ -97,6 +97,14 @@ export function getAttrsMap(node: Y.Map<unknown>): Y.Map<unknown> {
   return attrs;
 }
 
+export function getAclMap(node: Y.Map<unknown>): Y.Map<unknown> {
+  const acl = node.get("acl");
+  if (!(acl instanceof Y.Map)) {
+    throw new Error("Invalid node: acl must be a Y.Map.");
+  }
+  return acl;
+}
+
 export function yNodeToSnapshot(node: Y.Map<unknown>): TreeNodeSnapshot {
   return {
     id: requireString(node.get("id"), "node.id"),
