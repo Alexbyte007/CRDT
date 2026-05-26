@@ -91,6 +91,7 @@ export interface RejectedOperationResult {
   id?: string;
   error: {
     name: string;
+    code?: string;
     message: string;
   };
 }
