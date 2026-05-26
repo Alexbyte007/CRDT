@@ -50,6 +50,12 @@ describe("collaboration server", () => {
     expect(html).toContain("autoSaveNode");
     expect(html).toContain("restoreEditorFocus");
     expect(html).toContain("添加子节点");
+    expect(html).toContain("谁能看");
+    expect(html).toContain("所有人可见");
+    expect(html).toContain("仅管理员可见");
+    expect(html).toContain("管理员和研发经理可见");
+    expect(html).toContain("研发团队可见");
+    expect(html).toContain("updateNodeAudience");
     expect(html).toContain("localStorage");
     expect(html).toContain("crdt-editor-offline-queue-v1");
     expect(html).not.toContain("用户与权限管理");

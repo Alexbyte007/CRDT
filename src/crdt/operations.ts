@@ -7,6 +7,7 @@ import {
   type NodeId,
   type RenameNodeOperation,
   type TreeNodeSnapshot,
+  type UpdateAclOperation,
   type UpdateAttrsOperation,
   type UpdateContentOperation
 } from "../types";
@@ -15,6 +16,7 @@ import { reconcileDocumentConflicts } from "./conflicts";
 import {
   createYNode,
   type CrdtDocument,
+  getAclMap,
   getAttrsMap,
   getChildrenArray,
   getNodeMap,
@@ -39,6 +41,9 @@ export function applyFullDocOperation(crdt: CrdtDocument, operation: FullDocOper
       break;
     case "updateAttrs":
       updateAttrs(crdt, operation);
+      break;
+    case "updateAcl":
+      updateAcl(crdt, operation);
       break;
     default:
       assertNever(operation);
@@ -154,6 +159,26 @@ export function updateAttrs(crdt: CrdtDocument, operation: UpdateAttrsOperation)
         attrs.delete(key);
       } else {
         attrs.set(key, value);
+      }
+    }
+    touchNode(node, operation.actorId, timestamp);
+    touchDocument(crdt, timestamp);
+  });
+
+  return yNodeToSnapshot(node);
+}
+
+export function updateAcl(crdt: CrdtDocument, operation: UpdateAclOperation): TreeNodeSnapshot {
+  const timestamp = operation.timestamp ?? Date.now();
+  const node = requireNode(crdt, operation.nodeId);
+
+  crdt.doc.transact(() => {
+    const acl = getAclMap(node);
+    for (const [key, value] of Object.entries(operation.aclPatch)) {
+      if (value === undefined) {
+        acl.delete(key);
+      } else {
+        acl.set(key, value);
       }
     }
     touchNode(node, operation.actorId, timestamp);

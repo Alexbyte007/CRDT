@@ -1,7 +1,7 @@
 import * as Y from "yjs";
 import { describe, expect, it } from "vitest";
 import { createSampleDocument } from "../src/fixtures/sample";
-import { addNode, deleteNode, renameNode, updateAttrs, updateContent } from "../src/crdt/operations";
+import { addNode, deleteNode, renameNode, updateAcl, updateAttrs, updateContent } from "../src/crdt/operations";
 import { createCrdtDocument, fromYDoc } from "../src/crdt/document";
 import { getDocumentSnapshot, getNodeSnapshot } from "../src/crdt/snapshot";
 
@@ -91,6 +91,26 @@ describe("Yjs JSON tree document operations", () => {
     expect(node?.content).toBe("更新后的公开说明。");
     expect(node?.attrs.tags).toEqual(["public", "readme"]);
     expect(node?.updatedAt).toBe(5);
+  });
+
+  it("updates node acl audience", () => {
+    const crdt = createSampleDocument();
+
+    updateAcl(crdt, {
+      type: "updateAcl",
+      nodeId: "node-public",
+      aclPatch: {
+        visibility: "restricted",
+        allowedRoles: ["admin", "manager"]
+      },
+      actorId: "u-admin",
+      timestamp: 6
+    });
+
+    const node = getNodeSnapshot(crdt, "node-public");
+    expect(node?.acl.visibility).toBe("restricted");
+    expect(node?.acl.allowedRoles).toEqual(["admin", "manager"]);
+    expect(node?.updatedAt).toBe(6);
   });
 
   it("deletes a subtree and records tombstones", () => {
