@@ -184,11 +184,6 @@ export function renderHomePage(): string {
         background: #fbfcfe;
       }
 
-      .node.selected {
-        border-color: #1f6feb;
-        box-shadow: 0 0 0 2px rgba(31, 111, 235, 0.12);
-      }
-
       .node-title {
         display: flex;
         align-items: center;
@@ -196,9 +191,26 @@ export function renderHomePage(): string {
         gap: 10px;
       }
 
-      .node-title button {
+      .node-title strong {
+        overflow-wrap: anywhere;
+      }
+
+      .node-title input {
+        flex: 1;
+        min-width: 0;
+        font-weight: 700;
+      }
+
+      .node-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .node-actions button {
         width: auto;
-        padding: 5px 8px;
+        padding: 6px 9px;
         font-size: 12px;
       }
 
@@ -214,15 +226,9 @@ export function renderHomePage(): string {
         color: #303741;
       }
 
-      pre {
-        overflow: auto;
-        max-height: 260px;
-        margin: 0;
-        padding: 12px;
-        border-radius: 8px;
-        background: #111827;
-        color: #f9fafb;
-        font-size: 12px;
+      .node textarea {
+        margin-top: 8px;
+        min-height: 82px;
       }
 
       .status {
@@ -301,31 +307,11 @@ export function renderHomePage(): string {
         </div>
         <div class="toolbar">
           <button id="refresh" class="secondary">刷新视图</button>
-          <button id="connect" class="secondary">连接 WS</button>
+          <button id="connect" class="secondary">联网</button>
         </div>
         <div class="toolbar">
           <button id="syncOffline" class="secondary">同步离线操作</button>
           <button id="logout" class="secondary">登出</button>
-        </div>
-        <div>
-          <label for="selected">选中节点 ID</label>
-          <input id="selected" readonly />
-        </div>
-        <div>
-          <label for="title">标题</label>
-          <input id="title" placeholder="新标题或新节点标题" />
-        </div>
-        <div>
-          <label for="content">内容</label>
-          <textarea id="content" placeholder="节点内容"></textarea>
-        </div>
-        <div class="toolbar">
-          <button id="rename">重命名</button>
-          <button id="updateContent">改内容</button>
-        </div>
-        <div class="toolbar">
-          <button id="addChild">添加子节点</button>
-          <button id="deleteNode" class="danger">删除节点</button>
         </div>
         <div class="status" id="status"></div>
       </section>
@@ -344,8 +330,11 @@ export function renderHomePage(): string {
         policyVersion: 0,
         view: null,
         stateVector: "",
-        selectedId: "",
         socket: null,
+        editing: {
+          timers: {},
+          drafts: {}
+        },
         offline: {
           connected: false,
           queue: loadStoredOfflineQueue()
@@ -365,13 +354,6 @@ export function renderHomePage(): string {
         connectionState: document.querySelector("#connectionState"),
         queueLength: document.querySelector("#queueLength"),
         syncOffline: document.querySelector("#syncOffline"),
-        selected: document.querySelector("#selected"),
-        title: document.querySelector("#title"),
-        content: document.querySelector("#content"),
-        rename: document.querySelector("#rename"),
-        updateContent: document.querySelector("#updateContent"),
-        addChild: document.querySelector("#addChild"),
-        deleteNode: document.querySelector("#deleteNode"),
         status: document.querySelector("#status"),
         tree: document.querySelector("#tree")
       };
@@ -438,8 +420,8 @@ export function renderHomePage(): string {
         state.token = body.token;
         state.user = body.user;
         state.policyVersion = body.policyVersion || 0;
-        state.selectedId = "";
-        els.selected.value = "";
+        clearAllAutoSaveTimers();
+        state.editing.drafts = {};
         setLoginStatus("");
         setStatus("已登录：" + state.user.name);
         await loadView();
@@ -461,7 +443,8 @@ export function renderHomePage(): string {
           state.view = null;
           state.stateVector = "";
           state.offline.connected = false;
-          state.selectedId = "";
+          clearAllAutoSaveTimers();
+          state.editing.drafts = {};
           render();
           setLoginStatus("已登出");
         }
@@ -479,6 +462,7 @@ export function renderHomePage(): string {
       }
 
       function render() {
+        const focus = captureEditorFocus();
         document.body.className = state.user ? "app-mode" : "login-mode";
         els.headerSession.textContent = state.user
           ? state.user.name + " / " + state.user.role
@@ -489,6 +473,7 @@ export function renderHomePage(): string {
         for (const root of state.view.roots) {
           els.tree.appendChild(renderNode(root));
         }
+        restoreEditorFocus(focus);
       }
 
       function renderSyncState() {
@@ -497,30 +482,91 @@ export function renderHomePage(): string {
           ? state.user.name + " / " + state.user.role + " / " + state.user.department
           : "未登录";
         els.policyVersion.textContent = state.policyVersion ? String(state.policyVersion) : "-";
-        els.connectionState.textContent = state.offline.connected ? "已连接" : "离线";
+        els.connectionState.textContent = isSocketActive()
+          ? state.offline.connected
+            ? "已连接"
+            : "连接中"
+          : "离线";
         els.queueLength.textContent = String(currentQueue.length);
         els.syncOffline.disabled = !state.token || currentQueue.length === 0;
         els.refresh.disabled = !state.token;
         els.connect.disabled = !state.token;
+        els.connect.textContent = isSocketActive() ? "断网" : "联网";
       }
 
       function renderNode(node) {
         const li = document.createElement("li");
         const box = document.createElement("div");
-        box.className = "node" + (node.id === state.selectedId ? " selected" : "");
-        box.innerHTML =
-          '<div class="node-title"><strong>' +
-          escapeHtml(node.title) +
-          '</strong><button type="button">选择</button></div>' +
-          '<div class="meta">' +
-          node.id +
-          " · " +
-          node.type +
-          " · " +
-          permissionText(node.permissions) +
-          "</div>" +
-          (node.content ? '<div class="content">' + escapeHtml(node.content) + "</div>" : "");
-        box.querySelector("button").addEventListener("click", () => selectNode(node));
+        box.className = "node";
+        const draft = getNodeDraft(node);
+
+        const titleRow = document.createElement("div");
+        titleRow.className = "node-title";
+        if (node.permissions.canRename) {
+          const titleInput = document.createElement("input");
+          titleInput.value = draft.title;
+          titleInput.placeholder = "节点标题";
+          titleInput.dataset.nodeId = node.id;
+          titleInput.dataset.field = "title";
+          titleInput.addEventListener("input", () => {
+            getNodeDraft(node).title = titleInput.value;
+            scheduleAutoSave(node.id);
+          });
+          titleInput.addEventListener("blur", () => autoSaveNode(node.id).catch((error) => setStatus(error.message)));
+          titleRow.appendChild(titleInput);
+        } else {
+          const title = document.createElement("strong");
+          title.textContent = node.title;
+          titleRow.appendChild(title);
+        }
+        box.appendChild(titleRow);
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = node.id + " · " + node.type + " · " + permissionText(node.permissions);
+        box.appendChild(meta);
+
+        if (node.permissions.canEditContent) {
+          const contentInput = document.createElement("textarea");
+          contentInput.value = draft.content;
+          contentInput.placeholder = "节点内容";
+          contentInput.dataset.nodeId = node.id;
+          contentInput.dataset.field = "content";
+          contentInput.addEventListener("input", () => {
+            getNodeDraft(node).content = contentInput.value;
+            scheduleAutoSave(node.id);
+          });
+          contentInput.addEventListener("blur", () => autoSaveNode(node.id).catch((error) => setStatus(error.message)));
+          box.appendChild(contentInput);
+        } else if (node.content) {
+          const content = document.createElement("div");
+          content.className = "content";
+          content.textContent = node.content;
+          box.appendChild(content);
+        }
+
+        if (node.permissions.canAddChild || node.permissions.canDelete) {
+          const actions = document.createElement("div");
+          actions.className = "node-actions";
+          if (node.permissions.canAddChild) {
+            const addButton = document.createElement("button");
+            addButton.type = "button";
+            addButton.className = "secondary";
+            addButton.textContent = "添加子节点";
+            addButton.addEventListener("click", () => addChildNode(node.id).catch((error) => setStatus(error.message)));
+            actions.appendChild(addButton);
+          }
+          if (node.permissions.canDelete) {
+            const deleteButton = document.createElement("button");
+            deleteButton.type = "button";
+            deleteButton.className = "danger";
+            deleteButton.textContent = "删除";
+            deleteButton.addEventListener("click", () => deleteTreeNode(node.id).catch((error) => setStatus(error.message)));
+            actions.appendChild(deleteButton);
+          }
+          box.appendChild(actions);
+        }
+
         li.appendChild(box);
         if (node.children && node.children.length > 0) {
           const ul = document.createElement("ul");
@@ -530,12 +576,55 @@ export function renderHomePage(): string {
         return li;
       }
 
-      function selectNode(node) {
-        state.selectedId = node.id;
-        els.selected.value = node.id;
-        els.title.value = node.title;
-        els.content.value = node.content || "";
-        render();
+      function captureEditorFocus() {
+        const active = document.activeElement;
+        if (!active || active.dataset.nodeId === undefined || active.dataset.field === undefined) {
+          return null;
+        }
+        return {
+          nodeId: active.dataset.nodeId,
+          field: active.dataset.field,
+          selectionStart: active.selectionStart,
+          selectionEnd: active.selectionEnd
+        };
+      }
+
+      function restoreEditorFocus(focus) {
+        if (!focus) return;
+        const selector =
+          '[data-node-id="' + cssEscape(focus.nodeId) + '"][data-field="' + cssEscape(focus.field) + '"]';
+        const next = els.tree.querySelector(selector);
+        if (!next) return;
+        next.focus();
+        if (typeof next.setSelectionRange === "function") {
+          const length = next.value.length;
+          const start = Math.min(focus.selectionStart ?? length, length);
+          const end = Math.min(focus.selectionEnd ?? start, length);
+          next.setSelectionRange(start, end);
+        }
+      }
+
+      function cssEscape(value) {
+        if (window.CSS && typeof window.CSS.escape === "function") {
+          return window.CSS.escape(value);
+        }
+        return String(value).replaceAll('"', '\\"');
+      }
+
+      function getNodeDraft(node) {
+        const existing = state.editing.drafts[node.id];
+        if (existing && (existing.title !== existing.originalTitle || existing.content !== existing.originalContent)) {
+          return existing;
+        }
+
+        const draft = {
+          title: node.title,
+          content: node.content || "",
+          originalTitle: node.title,
+          originalContent: node.content || ""
+        };
+        state.editing.drafts[node.id] = draft;
+        return draft;
       }
 
       function permissionText(permissions) {
@@ -568,6 +657,13 @@ export function renderHomePage(): string {
         return state.socket && state.socket.readyState === WebSocket.OPEN;
       }
 
+      function isSocketActive() {
+        return (
+          state.socket &&
+          (state.socket.readyState === WebSocket.OPEN || state.socket.readyState === WebSocket.CONNECTING)
+        );
+      }
+
       function queueForCurrentUser() {
         return state.offline.queue.filter((envelope) => envelope.userId === currentUserId());
       }
@@ -578,12 +674,82 @@ export function renderHomePage(): string {
         saveOfflineQueue();
       }
 
+      function clearAutoSaveTimer(nodeId) {
+        const timer = state.editing.timers[nodeId];
+        if (timer) {
+          window.clearTimeout(timer);
+          delete state.editing.timers[nodeId];
+        }
+      }
+
+      function clearAllAutoSaveTimers() {
+        for (const nodeId of Object.keys(state.editing.timers)) {
+          clearAutoSaveTimer(nodeId);
+        }
+      }
+
+      function scheduleAutoSave(nodeId) {
+        clearAutoSaveTimer(nodeId);
+        state.editing.timers[nodeId] = window.setTimeout(() => {
+          delete state.editing.timers[nodeId];
+          autoSaveNode(nodeId).catch((error) => setStatus(error.message));
+        }, 600);
+      }
+
+      async function autoSaveNode(nodeId) {
+        const draft = state.editing.drafts[nodeId];
+        if (!draft) return;
+        clearAutoSaveTimer(nodeId);
+        const title = draft.title;
+        const content = draft.content;
+        const operations = [];
+
+        if (title !== draft.originalTitle) {
+          if (!title.trim()) {
+            draft.title = draft.originalTitle;
+            render();
+            setStatus("标题不能为空");
+            return;
+          }
+          operations.push({ type: "renameNode", nodeId, title });
+          draft.originalTitle = title;
+        }
+
+        if (content !== draft.originalContent) {
+          operations.push({ type: "updateContent", nodeId, content });
+          draft.originalContent = content;
+        }
+
+        for (const operation of operations) {
+          await submitOperation(operation);
+        }
+
+        if (operations.length > 0) {
+          setStatus(isSocketOpen() ? "编辑已实时提交" : "离线编辑已进入队列");
+        }
+      }
+
+      async function addChildNode(parentId) {
+        await submitOperation({
+          type: "addNode",
+          parentId,
+          title: "新节点",
+          content: ""
+        });
+      }
+
+      async function deleteTreeNode(nodeId) {
+        if (!window.confirm("确定删除当前节点吗？")) return;
+        await submitOperation({ type: "deleteNode", nodeId });
+        delete state.editing.drafts[nodeId];
+      }
+
       async function submitOperation(operation) {
         if (!state.token) return setStatus("请先登录");
         const envelope = createEnvelope(operation);
         state.offline.queue.push(envelope);
         saveOfflineQueue();
-        render();
+        renderSyncState();
         if (isSocketOpen()) {
           state.socket.send(JSON.stringify({ type: "operation", envelope }));
           setStatus("操作已发送，等待确认");
@@ -639,57 +805,26 @@ export function renderHomePage(): string {
         }
       });
 
-      els.rename.addEventListener("click", async () => {
-        if (!state.selectedId) return setStatus("请先选择节点");
-        try {
-          await submitOperation({ type: "renameNode", nodeId: state.selectedId, title: els.title.value });
-        } catch (error) {
-          setStatus(error.message);
+      function disconnectWebSocket(message) {
+        const socket = state.socket;
+        state.socket = null;
+        state.offline.connected = false;
+        if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+          socket.close();
         }
-      });
+        renderSyncState();
+        setStatus(message || "已切换为离线状态，后续操作会进入离线队列");
+      }
 
-      els.updateContent.addEventListener("click", async () => {
-        if (!state.selectedId) return setStatus("请先选择节点");
-        try {
-          await submitOperation({ type: "updateContent", nodeId: state.selectedId, content: els.content.value });
-        } catch (error) {
-          setStatus(error.message);
-        }
-      });
-
-      els.addChild.addEventListener("click", async () => {
-        if (!state.selectedId) return setStatus("请先选择父节点");
-        try {
-          await submitOperation({
-            type: "addNode",
-            parentId: state.selectedId,
-            title: els.title.value || "新节点",
-            content: els.content.value || ""
-          });
-        } catch (error) {
-          setStatus(error.message);
-        }
-      });
-
-      els.deleteNode.addEventListener("click", async () => {
-        if (!state.selectedId) return setStatus("请先选择节点");
-        if (!window.confirm("确定删除当前节点吗？")) return;
-        try {
-          await submitOperation({ type: "deleteNode", nodeId: state.selectedId });
-          state.selectedId = "";
-          els.selected.value = "";
-          render();
-        } catch (error) {
-          setStatus(error.message);
-        }
-      });
-
-      els.connect.addEventListener("click", () => {
+      function connectWebSocket() {
         if (!state.token) return setStatus("请先登录");
-        if (state.socket) state.socket.close();
+        if (isSocketActive()) return disconnectWebSocket();
         const protocol = location.protocol === "https:" ? "wss:" : "ws:";
         const socket = new WebSocket(protocol + "//" + location.host + "/ws?token=" + encodeURIComponent(state.token));
         state.socket = socket;
+        state.offline.connected = false;
+        renderSyncState();
+        setStatus("正在联网...");
         socket.onmessage = (event) => {
           const message = JSON.parse(event.data);
           if (message.type === "view" || message.type === "operationApplied") {
@@ -716,15 +851,21 @@ export function renderHomePage(): string {
         };
         socket.onclose = () => {
           if (state.socket !== socket) return;
+          state.socket = null;
           state.offline.connected = false;
           renderSyncState();
           setStatus("WebSocket 已断开");
         };
         socket.onerror = () => {
           if (state.socket !== socket) return;
+          state.socket = null;
           state.offline.connected = false;
           renderSyncState();
         };
+      }
+
+      els.connect.addEventListener("click", () => {
+        connectWebSocket();
       });
 
       window.localStorage.removeItem("crdt-editor-session-token-v1");

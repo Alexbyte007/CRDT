@@ -1,6 +1,6 @@
 import * as Y from "yjs";
 import { describe, expect, it } from "vitest";
-import { applyFullDocOperation, updateAttrs } from "../src/crdt/operations";
+import { applyFullDocOperation, deleteNode, updateAttrs } from "../src/crdt/operations";
 import { defaultPolicyEngine } from "../src/access-control/default-policy";
 import { fromYDoc, type CrdtDocument } from "../src/crdt/document";
 import { reconcileDocumentConflicts } from "../src/crdt/conflicts";
@@ -210,6 +210,68 @@ describe("concurrent heterogeneous view sync", () => {
     expect(findViewNode(result.view.roots, "node-public")?.content).toBe(
       "管理员在用户离线期间更新公开说明。"
     );
+  });
+
+  it("rejects offline operations whose target was deleted while applying other valid batch items", () => {
+    const crdt = createSampleDocument();
+    const manager = user("u-dev-manager");
+    const context: CollaborationContext = {
+      crdt,
+      users: new Map(sampleUsers.map((candidate) => [candidate.id, candidate])),
+      now: () => 8,
+      processedOperationIds: new Set(),
+      sessions: new Map(),
+      policyVersion: 1,
+      policyEngine: defaultPolicyEngine
+    };
+    const baseStateVector = encodeStateVector(crdt);
+
+    deleteNode(crdt, {
+      type: "deleteNode",
+      nodeId: "node-module-a",
+      actorId: "u-admin",
+      timestamp: 6
+    });
+
+    const result = applyBatchViewOperationRequest(context, {
+      user: manager,
+      operations: [
+        {
+          id: "offline-rename-deleted",
+          baseStateVector,
+          createdAt: 4,
+          operation: {
+            type: "renameNode",
+            nodeId: "node-module-a",
+            title: "离线重命名已删除节点"
+          }
+        },
+        {
+          id: "offline-valid-add",
+          baseStateVector,
+          createdAt: 5,
+          operation: {
+            type: "addNode",
+            parentId: "node-dev-plan",
+            nodeId: "node-valid-after-delete",
+            title: "仍然合法的离线新增"
+          }
+        }
+      ]
+    });
+
+    const snapshot = getDocumentSnapshot(crdt);
+    expect(result.applied).toEqual(["offline-valid-add"]);
+    expect(result.rejected).toHaveLength(1);
+    expect(result.rejected[0]).toMatchObject({
+      id: "offline-rename-deleted",
+      error: {
+        name: "AccessControlError",
+        code: "TARGET_DELETED"
+      }
+    });
+    expect(snapshot.nodes["node-valid-after-delete"]).toBeDefined();
+    expect(snapshot.nodes["node-module-a"]).toBeUndefined();
   });
 });
 

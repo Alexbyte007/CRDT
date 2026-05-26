@@ -41,13 +41,24 @@ describe("collaboration server", () => {
     expect(response.status).toBe(200);
     expect(html).toContain("登录协同空间");
     expect(html).toContain("login-screen");
-    expect(html).toContain("删除节点");
+    expect(html).toContain("删除");
+    expect(html).toContain("联网");
+    expect(html).toContain("断网");
     expect(html).toContain("登录");
     expect(html).toContain("deleteNode");
+    expect(html).toContain("node-actions");
+    expect(html).toContain("autoSaveNode");
+    expect(html).toContain("restoreEditorFocus");
+    expect(html).toContain("添加子节点");
     expect(html).toContain("localStorage");
     expect(html).toContain("crdt-editor-offline-queue-v1");
     expect(html).not.toContain("用户与权限管理");
+    expect(html).not.toContain("选中节点 ID");
     expect(html).not.toContain("<pre id=\"raw\"");
+    expect(html).not.toContain("<button id=\"rename\"");
+    expect(html).not.toContain("<button id=\"updateContent\"");
+    expect(html).not.toContain("<button id=\"addChild\"");
+    expect(html).not.toContain("<button id=\"deleteNode\"");
   });
 
   it("accepts authorized HTTP operations and returns the updated user view", async () => {

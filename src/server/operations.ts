@@ -1,7 +1,9 @@
 import { applyFullDocOperation } from "../crdt/operations";
+import { nodeIsDeleted } from "../crdt/conflicts";
+import { getNodeSnapshot } from "../crdt/snapshot";
 import { encodeStateVector } from "../crdt/state-vector";
 import { getView, putOperation } from "../view/transform";
-import type { User, UserView, ViewOperation, ViewOperationEnvelope } from "../types";
+import { AccessControlError, type User, type UserView, type ViewOperation, type ViewOperationEnvelope } from "../types";
 import type {
   BatchViewOperationEnvelope,
   CollaborationContext,
@@ -53,6 +55,7 @@ export function applyViewOperationRequest(
     };
   }
 
+  preflightViewOperation(context, input.user, operation);
   const fullOperation = putOperation(context.crdt, input.user, operation, {
     now: context.now(),
     policyEngine: context.policyEngine
@@ -72,6 +75,44 @@ export function applyViewOperationRequest(
     deduplicated: false,
     stateVector: encodeStateVector(context.crdt)
   };
+}
+
+function preflightViewOperation(
+  context: CollaborationContext,
+  user: User,
+  operation: ViewOperation
+): void {
+  const targetId = operation.type === "addNode" ? operation.parentId : operation.nodeId;
+  const targetKind = operation.type === "addNode" ? "parent" : "target";
+
+  if (nodeIsDeleted(context.crdt, targetId)) {
+    throw new AccessControlError(
+      `Offline operation rejected: ${targetKind} node ${targetId} was deleted before reconnect.`
+    );
+  }
+
+  const target = getNodeSnapshot(context.crdt, targetId);
+  if (!target) {
+    throw new AccessControlError(
+      `Offline operation rejected: ${targetKind} node ${targetId} no longer exists.`
+    );
+  }
+
+  if (!context.policyEngine.canViewNode(user, target)) {
+    throw new AccessControlError(
+      `Offline operation rejected: ${targetKind} node ${targetId} is no longer visible to ${user.id}.`
+    );
+  }
+
+  if (!context.policyEngine.canEditNode(user, target, operation.type)) {
+    const action =
+      operation.type === "addNode"
+        ? "add a child under"
+        : `${operation.type} on`;
+    throw new AccessControlError(
+      `Offline operation rejected: ${user.id} is no longer allowed to ${action} node ${targetId}.`
+    );
+  }
 }
 
 export function applyBatchViewOperationRequest(
@@ -148,10 +189,11 @@ function normalizeOperation(input: ApplyViewOperationInput): ViewOperation {
   throw new Error("Request must include either operation or envelope.");
 }
 
-function normalizeError(error: unknown): { name: string; message: string } {
+function normalizeError(error: unknown): { name: string; code?: string; message: string } {
   if (error instanceof Error) {
     return {
       name: error.name,
+      code: classifyErrorCode(error),
       message: error.message
     };
   }
@@ -160,4 +202,28 @@ function normalizeError(error: unknown): { name: string; message: string } {
     name: "Error",
     message: String(error)
   };
+}
+
+function classifyErrorCode(error: Error): string {
+  if (error.name === "AccessControlError") {
+    if (/deleted before reconnect/.test(error.message)) {
+      return "TARGET_DELETED";
+    }
+    if (/no longer exists|does not exist/.test(error.message)) {
+      return "TARGET_NOT_FOUND";
+    }
+    if (/no longer visible/.test(error.message)) {
+      return "TARGET_NOT_VISIBLE";
+    }
+    if (/not allowed|no longer allowed|No attrs/.test(error.message)) {
+      return "ACCESS_DENIED";
+    }
+    return "ACCESS_CONTROL_REJECTED";
+  }
+
+  if (/baseStateVector/.test(error.message) || /userId/.test(error.message)) {
+    return "INVALID_ENVELOPE";
+  }
+
+  return "UNKNOWN_ERROR";
 }
