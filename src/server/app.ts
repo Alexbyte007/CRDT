@@ -1,0 +1,63 @@
+import { createServer } from "node:http";
+import { WebSocketServer } from "ws";
+import { defaultPolicyConfig } from "../access-control/default-policy";
+import { PolicyEngine } from "../access-control/policy-engine";
+import { handleHttpRequest } from "./http";
+import type {
+  CollaborationContext,
+  CollaborationServer,
+  CollaborationServerOptions
+} from "./types";
+import {
+  broadcastViews,
+  handleWebSocketConnection,
+  type WebSocketClient
+} from "./websocket";
+
+export function createCollaborationServer(
+  options: CollaborationServerOptions
+): CollaborationServer {
+  const context: CollaborationContext = {
+    crdt: options.crdt,
+    users: new Map(options.users.map((user) => [user.id, user])),
+    now: options.now ?? Date.now,
+    processedOperationIds: new Set(),
+    sessions: new Map(),
+    policyVersion: 1,
+    policyEngine: new PolicyEngine(defaultPolicyConfig)
+  };
+
+  const clients = new Set<WebSocketClient>();
+  const httpServer = createServer((request, response) => {
+    void handleHttpRequest(request, response, context, () => {
+      broadcastViews(context, clients);
+    });
+  });
+  const wsServer = new WebSocketServer({ noServer: true });
+
+  httpServer.on("upgrade", (request, socket, head) => {
+    const url = new URL(request.url ?? "/", "http://localhost");
+
+    if (url.pathname !== "/ws") {
+      socket.destroy();
+      return;
+    }
+
+    wsServer.handleUpgrade(request, socket, head, (webSocket) => {
+      handleWebSocketConnection(webSocket, request, context, clients);
+    });
+  });
+
+  httpServer.on("close", () => {
+    for (const client of clients) {
+      client.socket.close();
+    }
+    wsServer.close();
+  });
+
+  return {
+    httpServer,
+    wsServer,
+    context
+  };
+}

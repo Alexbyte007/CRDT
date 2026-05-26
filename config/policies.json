@@ -1,0 +1,145 @@
+{
+  "name": "json-tree-privacy-lens",
+  "source": "JSONTree",
+  "description": "A configurable get/put style privacy view policy for the Yjs JSON tree document.",
+  "view": {
+    "defaultVisible": false,
+    "nodeRules": [
+      {
+        "name": "admin sees complete source",
+        "match": "user.role == 'admin'",
+        "visible": true
+      },
+      {
+        "name": "public active nodes are visible",
+        "match": "node.acl.visibility == 'public' and node.attrs.status == 'active'",
+        "visible": true
+      },
+      {
+        "name": "department nodes require same department",
+        "match": "node.acl.visibility == 'department' and node.attrs.status == 'active' and user.department == node.attrs.department and includes(node.acl.allowedRoles, user.role)",
+        "visible": true
+      },
+      {
+        "name": "managers can view active department nodes",
+        "match": "node.acl.visibility == 'department' and node.attrs.status == 'active' and user.role == 'manager' and includes(node.acl.allowedRoles, user.role)",
+        "visible": true
+      },
+      {
+        "name": "private nodes are visible to owners",
+        "match": "node.acl.visibility == 'private' and node.attrs.status == 'active' and user.id == node.attrs.ownerId",
+        "visible": true
+      },
+      {
+        "name": "restricted nodes need allowed role",
+        "match": "node.acl.visibility == 'restricted' and node.attrs.status == 'active' and includes(node.acl.allowedRoles, user.role)",
+        "visible": true
+      },
+      {
+        "name": "explicit user allow",
+        "match": "node.attrs.status == 'active' and includes(node.acl.allowedUsers, user.id)",
+        "visible": true
+      },
+      {
+        "name": "explicit user deny wins",
+        "match": "includes(node.acl.deniedUsers, user.id)",
+        "visible": false
+      },
+      {
+        "name": "archived nodes are hidden from non-admin users",
+        "match": "node.attrs.status == 'archived' and user.role != 'admin'",
+        "visible": false
+      }
+    ],
+    "fieldRules": [
+      {
+        "name": "safe structural fields",
+        "match": "field in ['id', 'parentId', 'type', 'title', 'children']",
+        "visible": true
+      },
+      {
+        "name": "admin can see every field",
+        "match": "user.role == 'admin'",
+        "visible": true
+      },
+      {
+        "name": "acl is hidden from ordinary users",
+        "match": "startsWith(field, 'acl')",
+        "visible": false
+      },
+      {
+        "name": "content hidden from guest unless public",
+        "match": "field == 'content' and (user.role != 'guest' or node.acl.visibility == 'public')",
+        "visible": true
+      },
+      {
+        "name": "department visible to manager and member",
+        "match": "field == 'attrs.department' and user.role in ['manager', 'member']",
+        "visible": true
+      },
+      {
+        "name": "manager can see owner",
+        "match": "field == 'attrs.ownerId' and user.role == 'manager'",
+        "visible": true
+      },
+      {
+        "name": "tags and status visible to manager and member",
+        "match": "field in ['attrs.tags', 'attrs.status'] and user.role in ['manager', 'member']",
+        "visible": true
+      }
+    ]
+  },
+  "put": {
+    "operationRules": [
+      {
+        "name": "admin can perform all operations",
+        "match": "user.role == 'admin'",
+        "operations": ["addNode", "deleteNode", "renameNode", "updateContent", "updateAttrs"]
+      },
+      {
+        "name": "manager can perform all operations on editable visible nodes",
+        "match": "user.role == 'manager' and includes(node.acl.editableRoles, user.role)",
+        "operations": ["addNode", "deleteNode", "renameNode", "updateContent", "updateAttrs"]
+      },
+      {
+        "name": "owner can edit owned visible nodes",
+        "match": "user.id == node.attrs.ownerId",
+        "operations": ["addNode", "renameNode", "updateContent"]
+      },
+      {
+        "name": "member can edit content in editable visible nodes",
+        "match": "user.role == 'member' and includes(node.acl.editableRoles, user.role)",
+        "operations": ["addNode", "renameNode", "updateContent"]
+      }
+    ],
+    "attrRules": [
+      {
+        "name": "admin can edit all attrs",
+        "match": "user.role == 'admin'",
+        "attrs": ["department", "ownerId", "tags", "status"]
+      },
+      {
+        "name": "manager can edit limited attrs",
+        "match": "user.role == 'manager'",
+        "attrs": ["tags", "status"]
+      },
+      {
+        "name": "member can edit tags only",
+        "match": "user.role == 'member'",
+        "attrs": ["tags"]
+      }
+    ]
+  },
+  "putDefaults": {
+    "addNode": {
+      "type": "doc",
+      "department": "inherit-parent",
+      "visibility": "inherit-parent",
+      "allowedRoles": "inherit-parent",
+      "editableRoles": "inherit-parent",
+      "ownerId": "current-user",
+      "allowedUsers": "current-user",
+      "status": "active"
+    }
+  }
+}

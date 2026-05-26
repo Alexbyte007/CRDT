@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+.vitest/
+.DS_Store
+npm-debug.log*
+
+*.tar.gz
+server.log
+.pdf_text.txt
+.ppt_text.txt
