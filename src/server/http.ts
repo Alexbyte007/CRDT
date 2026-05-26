@@ -17,6 +17,7 @@ import type {
   OperationRequestBody
 } from "./types";
 import { renderHomePage } from "./page";
+import { analyzeDeleteImpact } from "./delete-impact";
 import { applyBatchViewOperationRequest, applyViewOperationRequest } from "./operations";
 
 export async function handleHttpRequest(
@@ -116,6 +117,20 @@ export async function handleHttpRequest(
         }),
         stateVector: encodeStateVector(context.crdt),
         policyVersion: context.policyVersion
+      });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/delete-impact") {
+      const user = authenticateRequest(context, request);
+      const nodeId = url.searchParams.get("nodeId");
+      if (!nodeId) {
+        throw new Error("delete impact nodeId is required.");
+      }
+      const impact = analyzeDeleteImpact(context, user, nodeId);
+      sendJson(response, 200, {
+        ok: true,
+        ...impact
       });
       return;
     }

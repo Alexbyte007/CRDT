@@ -10,6 +10,7 @@ import type {
   ViewOperation,
   ViewOperationEnvelope
 } from "../types";
+import type { DeleteImpactResult } from "./delete-impact";
 
 export interface CollaborationServerOptions {
   crdt: CrdtDocument;
@@ -103,6 +104,10 @@ export interface BatchOperationResponseBody {
   rejected: RejectedOperationResult[];
   view: UserView;
   stateVector: string;
+}
+
+export interface DeleteImpactResponseBody extends DeleteImpactResult {
+  ok: true;
 }
 
 export interface ErrorResponseBody {

@@ -56,6 +56,8 @@ describe("collaboration server", () => {
     expect(html).toContain("管理员和研发经理可见");
     expect(html).toContain("研发团队可见");
     expect(html).toContain("updateNodeAudience");
+    expect(html).toContain("/api/delete-impact");
+    expect(html).toContain("删除已阻止");
     expect(html).toContain("localStorage");
     expect(html).toContain("crdt-editor-offline-queue-v1");
     expect(html).not.toContain("用户与权限管理");
@@ -65,6 +67,124 @@ describe("collaboration server", () => {
     expect(html).not.toContain("<button id=\"updateContent\"");
     expect(html).not.toContain("<button id=\"addChild\"");
     expect(html).not.toContain("<button id=\"deleteNode\"");
+  });
+
+  it("analyzes delete impact and blocks silent deletion when descendants are visible to others", async () => {
+    const { baseUrl } = await startTestServer();
+    const admin = await login(baseUrl, "u-admin");
+    const viewResponse = await fetch(`${baseUrl}/api/view`, {
+      headers: authHeaders(admin.token)
+    });
+    const viewBody = (await viewResponse.json()) as { stateVector: string };
+    const baseEnvelope = {
+      baseStateVector: viewBody.stateVector,
+      createdAt: 100
+    };
+
+    const batchResponse = await fetch(`${baseUrl}/api/operations/batch`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(admin.token)
+      },
+      body: JSON.stringify({
+        operations: [
+          {
+            ...baseEnvelope,
+            id: "impact-parent",
+            operation: {
+              type: "addNode",
+              parentId: "node-root",
+              nodeId: "node-impact-parent",
+              title: "删除影响父节点",
+              content: ""
+            }
+          },
+          {
+            ...baseEnvelope,
+            id: "impact-parent-private",
+            operation: {
+              type: "updateAcl",
+              nodeId: "node-impact-parent",
+              aclPatch: {
+                visibility: "restricted",
+                allowedRoles: ["admin"]
+              }
+            }
+          },
+          {
+            ...baseEnvelope,
+            id: "impact-child",
+            operation: {
+              type: "addNode",
+              parentId: "node-impact-parent",
+              nodeId: "node-impact-public-child",
+              title: "其他用户可见子节点",
+              content: "这个节点不应被静默删除。"
+            }
+          },
+          {
+            ...baseEnvelope,
+            id: "impact-child-public",
+            operation: {
+              type: "updateAcl",
+              nodeId: "node-impact-public-child",
+              aclPatch: {
+                visibility: "public",
+                allowedRoles: ["admin", "manager", "member", "guest"]
+              }
+            }
+          }
+        ]
+      })
+    });
+    expect(batchResponse.status).toBe(200);
+
+    const impactResponse = await fetch(`${baseUrl}/api/delete-impact?nodeId=node-impact-parent`, {
+      headers: authHeaders(admin.token)
+    });
+    const impact = (await impactResponse.json()) as {
+      ok: true;
+      deleteCount: number;
+      visibleNodes: Array<{ id: string; title: string; visibleTo: string[] }>;
+      affectedUsers: Array<{ id: string; name: string }>;
+      blocksSilentDelete: boolean;
+    };
+
+    expect(impactResponse.status).toBe(200);
+    expect(impact.deleteCount).toBe(2);
+    expect(impact.blocksSilentDelete).toBe(true);
+    expect(impact.visibleNodes).toEqual([
+      {
+        id: "node-impact-public-child",
+        title: "其他用户可见子节点",
+        visibleTo: ["u-dev-manager", "u-dev-member", "u-guest"]
+      }
+    ]);
+    expect(impact.affectedUsers.map((user) => user.id)).toEqual([
+      "u-dev-manager",
+      "u-dev-member",
+      "u-guest"
+    ]);
+
+    const leafImpactResponse = await fetch(`${baseUrl}/api/delete-impact?nodeId=node-impact-public-child`, {
+      headers: authHeaders(admin.token)
+    });
+    const leafImpact = (await leafImpactResponse.json()) as {
+      ok: true;
+      deleteCount: number;
+      deletedRootVisibleTo: string[];
+      visibleNodes: Array<{ id: string }>;
+      affectedUsers: Array<{ id: string }>;
+      blocksSilentDelete: boolean;
+    };
+
+    expect(leafImpactResponse.status).toBe(200);
+    expect(leafImpact.deleteCount).toBe(1);
+    expect(leafImpact.deletedRootVisibleTo).toEqual(["u-dev-manager", "u-dev-member", "u-guest"]);
+    expect(leafImpact.visibleNodes).toEqual([]);
+    expect(leafImpact.affectedUsers).toEqual([]);
+    expect(leafImpact.blocksSilentDelete).toBe(false);
   });
 
   it("accepts authorized HTTP operations and returns the updated user view", async () => {

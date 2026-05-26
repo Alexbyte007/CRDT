@@ -242,6 +242,7 @@ export function renderHomePage(): string {
         min-height: 20px;
         font-size: 13px;
         color: #535b66;
+        white-space: pre-wrap;
       }
 
       .sync-state {
@@ -766,9 +767,33 @@ export function renderHomePage(): string {
       }
 
       async function deleteTreeNode(nodeId) {
-        if (!window.confirm("确定删除当前节点吗？")) return;
+        const impact = await requestJson("/api/delete-impact?nodeId=" + encodeURIComponent(nodeId));
+        if (impact.blocksSilentDelete) {
+          setStatus(formatDeleteImpact(impact));
+          window.alert(formatDeleteImpact(impact));
+          return;
+        }
+
+        const message =
+          "确定删除当前节点吗？\\n将删除 " + impact.deleteCount + " 个节点。";
+        if (!window.confirm(message)) return;
         await submitOperation({ type: "deleteNode", nodeId });
         delete state.editing.drafts[nodeId];
+      }
+
+      function formatDeleteImpact(impact) {
+        const visibleNodes = impact.visibleNodes
+          .map((node) => "- " + node.title + " (" + node.id + ")")
+          .join("\\n");
+        const affectedUsers = impact.affectedUsers
+          .map((user) => "- " + user.name + " / " + user.role + " / " + user.department)
+          .join("\\n");
+        return (
+          "删除已阻止：该子树包含其他用户可见内容。\\n" +
+          "将删除节点数：" + impact.deleteCount + "\\n" +
+          "其他用户可见节点：\\n" + (visibleNodes || "- 无") + "\\n" +
+          "受影响用户：\\n" + (affectedUsers || "- 无")
+        );
       }
 
       function audienceFromAcl(acl) {
