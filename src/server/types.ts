@@ -11,11 +11,13 @@ import type {
   ViewOperationEnvelope
 } from "../types";
 import type { DeleteImpactResult } from "./delete-impact";
+import type { SqliteDocumentStore } from "./persistence";
 
 export interface CollaborationServerOptions {
   crdt: CrdtDocument;
   users: User[];
   now?: () => number;
+  documentStore?: Pick<SqliteDocumentStore, "save">;
 }
 
 export interface CollaborationServer {

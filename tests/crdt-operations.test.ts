@@ -1,7 +1,15 @@
 import * as Y from "yjs";
 import { describe, expect, it } from "vitest";
 import { createSampleDocument } from "../src/fixtures/sample";
-import { addNode, deleteNode, renameNode, updateAcl, updateAttrs, updateContent } from "../src/crdt/operations";
+import {
+  addNode,
+  deleteNode,
+  deleteNodeKeepChildren,
+  renameNode,
+  updateAcl,
+  updateAttrs,
+  updateContent
+} from "../src/crdt/operations";
 import { createCrdtDocument, fromYDoc } from "../src/crdt/document";
 import { getDocumentSnapshot, getNodeSnapshot } from "../src/crdt/snapshot";
 
@@ -130,6 +138,29 @@ describe("Yjs JSON tree document operations", () => {
     expect(snapshot.nodes["node-root"].children).toEqual(["node-public", "node-finance"]);
     expect(snapshot.tombstones["node-dev-plan"].updatedAt).toBe(6);
     expect(snapshot.tombstones["node-module-a"].updatedAt).toBe(6);
+  });
+
+  it("deletes a node while keeping its children attached to the former parent", () => {
+    const crdt = createSampleDocument();
+
+    const deleted = deleteNodeKeepChildren(crdt, {
+      type: "deleteNodeKeepChildren",
+      nodeId: "node-dev-plan",
+      actorId: "u-admin",
+      timestamp: 7
+    });
+
+    const snapshot = getDocumentSnapshot(crdt);
+    expect(deleted.map((node) => node.id)).toEqual(["node-dev-plan"]);
+    expect(snapshot.nodes["node-dev-plan"]).toBeUndefined();
+    expect(snapshot.nodes["node-module-a"]).toBeDefined();
+    expect(snapshot.nodes["node-module-a"].parentId).toBe("node-root");
+    expect(snapshot.nodes["node-root"].children).toEqual([
+      "node-public",
+      "node-module-a",
+      "node-finance"
+    ]);
+    expect(snapshot.tombstones["node-dev-plan"].updatedAt).toBe(7);
   });
 
   it("converges after exchanging Yjs updates", () => {

@@ -39,9 +39,12 @@ export function analyzeDeleteImpact(
   const visibleNodes: DeleteImpactVisibleNode[] = [];
 
   const deletedRootVisibleTo = usersWhoCanView(context, actor, root).map((user) => user.id);
+  const rootVisibleUserIds = new Set(deletedRootVisibleTo);
 
   for (const node of subtree.slice(1)) {
-    const visibleTo = usersWhoCanView(context, actor, node);
+    const visibleTo = usersWhoCanView(context, actor, node).filter(
+      (user) => !rootVisibleUserIds.has(user.id)
+    );
 
     if (visibleTo.length === 0) {
       continue;

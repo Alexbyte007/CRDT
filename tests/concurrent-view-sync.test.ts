@@ -10,7 +10,7 @@ import { createSampleDocument, sampleUsers } from "../src/fixtures/sample";
 import { applyBatchViewOperationRequest } from "../src/server/operations";
 import type { CollaborationContext } from "../src/server/types";
 import { getView, putOperation } from "../src/view/transform";
-import type { User, ViewNode } from "../src/types";
+import type { UpdateAclOperation, User, ViewNode } from "../src/types";
 
 describe("concurrent heterogeneous view sync", () => {
   it("does not lose concurrent adds from manager and admin", () => {
@@ -98,6 +98,18 @@ describe("concurrent heterogeneous view sync", () => {
 
   it("uses delete-wins when admin updates content while manager deletes the same node", () => {
     const { left: adminReplica, right: managerReplica } = forkSampleDocument();
+    const grantManagerDelete: UpdateAclOperation = {
+      type: "updateAcl",
+      nodeId: "node-dev-plan",
+      aclPatch: {
+        deletableRoles: ["admin", "manager"]
+      },
+      actorId: "u-admin",
+      timestamp: 1
+    };
+
+    applyFullDocOperation(adminReplica, grantManagerDelete);
+    applyFullDocOperation(managerReplica, grantManagerDelete);
 
     applyFullDocOperation(adminReplica, {
       type: "updateContent",

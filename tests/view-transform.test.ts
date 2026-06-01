@@ -114,7 +114,16 @@ describe("privacy view transform", () => {
       tags: [],
       status: "active"
     });
-    expect(fullOperation.node.acl.allowedUsers).toEqual(["u-dev-manager"]);
+    expect(fullOperation.node.acl).toEqual({
+      visibility: "department",
+      allowedRoles: ["admin", "manager", "member"],
+      editableRoles: ["admin", "manager"],
+      contentEditableRoles: ["admin", "manager"],
+      childAddableRoles: ["admin", "manager"],
+      deletableRoles: ["admin", "manager"],
+      allowedUsers: ["u-dev-manager"],
+      deniedUsers: []
+    });
 
     applyFullDocOperation(crdt, fullOperation);
 
@@ -122,6 +131,93 @@ describe("privacy view transform", () => {
     const parent = getNodeSnapshot(crdt, "node-dev-plan");
     expect(addedNode?.title).toBe("接口设计");
     expect(parent?.children).toEqual(["node-module-a", "node-api"]);
+  });
+
+  it("inherits parent visibility while granting creator-and-higher operation permissions", () => {
+    const crdt = createSampleDocument();
+    const admin = user("u-admin");
+    const manager = user("u-dev-manager");
+    const member = user("u-dev-member");
+
+    applyFullDocOperation(
+      crdt,
+      putOperation(
+        crdt,
+        admin,
+        {
+          type: "updateAcl",
+          nodeId: "node-public",
+          aclPatch: {
+            childAddableRoles: ["admin", "manager", "member"]
+          }
+        },
+        { now: 21 }
+      )
+    );
+
+    const fullOperation = putOperation(
+      crdt,
+      member,
+      {
+        type: "addNode",
+        parentId: "node-public",
+        nodeId: "node-member-child",
+        title: "成员创建的节点",
+        content: "创建者和更高角色可操作"
+      },
+      { now: 22 }
+    );
+
+    if (fullOperation.type !== "addNode") {
+      throw new Error("Expected addNode operation.");
+    }
+
+    expect(fullOperation.node.acl).toEqual({
+      visibility: "public",
+      allowedRoles: ["admin", "manager", "member", "guest"],
+      editableRoles: ["admin", "manager", "member"],
+      contentEditableRoles: ["admin", "manager", "member"],
+      childAddableRoles: ["admin", "manager", "member"],
+      deletableRoles: ["admin", "manager", "member"],
+      allowedUsers: ["u-dev-member"],
+      deniedUsers: []
+    });
+
+    applyFullDocOperation(crdt, fullOperation);
+
+    const memberView = getView(crdt, member, { now: 23 });
+    const managerView = getView(crdt, manager, { now: 23 });
+    const adminView = getView(crdt, admin, { now: 23 });
+
+    const memberNode = findViewNode(memberView.roots, "node-member-child");
+    const managerNode = findViewNode(managerView.roots, "node-member-child");
+    const adminNode = findViewNode(adminView.roots, "node-member-child");
+    const guestNode = findViewNode(getView(crdt, user("u-guest"), { now: 23 }).roots, "node-member-child");
+
+    expect(memberNode?.permissions).toMatchObject({
+      canRename: true,
+      canEditContent: true,
+      canAddChild: true,
+      canDelete: true
+    });
+    expect(managerNode?.permissions).toMatchObject({
+      canRename: true,
+      canEditContent: true,
+      canAddChild: true,
+      canDelete: true
+    });
+    expect(adminNode?.permissions).toMatchObject({
+      canRename: true,
+      canEditContent: true,
+      canAddChild: true,
+      canDelete: true
+    });
+    expect(guestNode?.permissions).toMatchObject({
+      canRename: false,
+      canEditContent: false,
+      canAddChild: false,
+      canDelete: false
+    });
   });
 
   it("filters manager attr updates to allowed node attributes", () => {
@@ -165,7 +261,10 @@ describe("privacy view transform", () => {
 
     expect(adminNode?.acl).toEqual({
       visibility: "public",
-      allowedRoles: ["admin", "manager", "member", "guest"]
+      allowedRoles: ["admin", "manager", "member", "guest"],
+      contentEditableRoles: ["admin", "manager"],
+      childAddableRoles: ["admin", "manager"],
+      deletableRoles: ["admin"]
     });
     expect(adminNode?.permissions.canEditAcl).toBe(true);
     expect(memberNode?.acl).toBeUndefined();
@@ -211,6 +310,100 @@ describe("privacy view transform", () => {
         aclPatch: {
           visibility: "public"
         }
+      })
+    ).toThrow(AccessControlError);
+  });
+
+  it("maps preserve-children delete operations back to full document operations", () => {
+    const crdt = createSampleDocument();
+    const admin = user("u-admin");
+
+    const fullOperation = putOperation(
+      crdt,
+      admin,
+      {
+        type: "deleteNodeKeepChildren",
+        nodeId: "node-dev-plan"
+      },
+      { now: 37 }
+    );
+
+    expect(fullOperation).toEqual({
+      type: "deleteNodeKeepChildren",
+      nodeId: "node-dev-plan",
+      actorId: "u-admin",
+      timestamp: 37
+    });
+  });
+
+  it("enforces operation-specific node permissions after admin ACL updates", () => {
+    const crdt = createSampleDocument();
+    const admin = user("u-admin");
+    const member = user("u-dev-member");
+    const guest = user("u-guest");
+
+    const aclOperation = putOperation(
+      crdt,
+      admin,
+      {
+        type: "updateAcl",
+        nodeId: "node-public",
+        aclPatch: {
+          visibility: "public",
+          allowedRoles: ["admin", "manager", "member", "guest"],
+          contentEditableRoles: ["admin", "manager", "member"],
+          childAddableRoles: ["admin", "manager", "member"],
+          deletableRoles: ["admin"]
+        }
+      },
+      { now: 34 }
+    );
+
+    applyFullDocOperation(crdt, aclOperation);
+
+    const memberNode = findViewNode(getView(crdt, member, { now: 35 }).roots, "node-public");
+    const guestNode = findViewNode(getView(crdt, guest, { now: 35 }).roots, "node-public");
+
+    expect(memberNode?.permissions).toMatchObject({
+      canRename: true,
+      canEditContent: true,
+      canAddChild: true,
+      canDelete: false,
+      canEditAcl: false
+    });
+    expect(guestNode?.permissions).toMatchObject({
+      canRename: false,
+      canEditContent: false,
+      canAddChild: false,
+      canDelete: false,
+      canEditAcl: false
+    });
+
+    expect(() =>
+      validateViewOperation(crdt, member, {
+        type: "updateContent",
+        nodeId: "node-public",
+        content: "研发成员可以修改公共节点内容"
+      })
+    ).not.toThrow();
+    expect(() =>
+      validateViewOperation(crdt, member, {
+        type: "addNode",
+        parentId: "node-public",
+        title: "研发成员可添加的子节点"
+      })
+    ).not.toThrow();
+    expect(() =>
+      validateViewOperation(crdt, member, {
+        type: "deleteNode",
+        nodeId: "node-public"
+      })
+    ).toThrow(AccessControlError);
+    expect(() =>
+      validateViewOperation(crdt, guest, {
+        type: "updateContent",
+        nodeId: "node-public",
+        content: "访客不能修改"
       })
     ).toThrow(AccessControlError);
   });
