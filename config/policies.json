@@ -17,7 +17,7 @@
       },
       {
         "name": "department nodes require same department",
-        "match": "node.acl.visibility == 'department' and node.attrs.status == 'active' and user.department == node.attrs.department and includes(node.acl.allowedRoles, user.role)",
+        "match": "node.acl.visibility == 'department' and node.attrs.status == 'active' and (user.department == node.attrs.department or node.attrs.department == 'all') and includes(node.acl.allowedRoles, user.role)",
         "visible": true
       },
       {
@@ -94,17 +94,12 @@
       {
         "name": "admin can perform all operations",
         "match": "user.role == 'admin'",
-        "operations": ["addNode", "deleteNode", "renameNode", "updateContent", "updateAttrs", "updateAcl"]
+        "operations": ["addNode", "deleteNode", "deleteNodeKeepChildren", "renameNode", "updateContent", "updateAttrs", "updateAcl"]
       },
       {
         "name": "manager can perform all operations on editable visible nodes",
         "match": "user.role == 'manager' and includes(node.acl.editableRoles, user.role)",
-        "operations": ["addNode", "deleteNode", "renameNode", "updateContent", "updateAttrs"]
-      },
-      {
-        "name": "owner can edit owned visible nodes",
-        "match": "user.id == node.attrs.ownerId",
-        "operations": ["addNode", "renameNode", "updateContent"]
+        "operations": ["addNode", "deleteNode", "deleteNodeKeepChildren", "renameNode", "updateContent", "updateAttrs"]
       },
       {
         "name": "member can edit content in editable visible nodes",

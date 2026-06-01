@@ -67,6 +67,9 @@ export function validateViewOperation(
     case "deleteNode":
       ensureCanEdit(user, target, "deleteNode", policyEngine);
       return;
+    case "deleteNodeKeepChildren":
+      ensureCanEdit(user, target, "deleteNodeKeepChildren", policyEngine);
+      return;
     case "renameNode":
       ensureCanEdit(user, target, "renameNode", policyEngine);
       return;
@@ -107,6 +110,13 @@ export function putOperation(
     case "deleteNode":
       return {
         type: "deleteNode",
+        nodeId: operation.nodeId,
+        actorId: user.id,
+        timestamp
+      };
+    case "deleteNodeKeepChildren":
+      return {
+        type: "deleteNodeKeepChildren",
         nodeId: operation.nodeId,
         actorId: user.id,
         timestamp
@@ -194,7 +204,10 @@ function projectNode(
   if (policyEngine.canEditNode(user, node, "updateAcl")) {
     viewNode.acl = {
       visibility: node.acl.visibility,
-      allowedRoles: node.acl.allowedRoles
+      allowedRoles: node.acl.allowedRoles,
+      contentEditableRoles: node.acl.contentEditableRoles ?? node.acl.editableRoles,
+      childAddableRoles: node.acl.childAddableRoles ?? node.acl.editableRoles,
+      deletableRoles: node.acl.deletableRoles ?? node.acl.editableRoles
     };
   }
 
@@ -275,28 +288,42 @@ function buildViewPermissions(
 }
 
 function sanitizeAclPatch(
-  aclPatch: Pick<Partial<NodeAcl>, "visibility" | "allowedRoles">
-): Pick<Partial<NodeAcl>, "visibility" | "allowedRoles"> {
-  const result: Pick<Partial<NodeAcl>, "visibility" | "allowedRoles"> = {};
+  aclPatch: Pick<
+    Partial<NodeAcl>,
+    "visibility" | "allowedRoles" | "contentEditableRoles" | "childAddableRoles" | "deletableRoles"
+  >
+): Pick<
+  Partial<NodeAcl>,
+  "visibility" | "allowedRoles" | "contentEditableRoles" | "childAddableRoles" | "deletableRoles"
+> {
+  const result: Pick<
+    Partial<NodeAcl>,
+    "visibility" | "allowedRoles" | "contentEditableRoles" | "childAddableRoles" | "deletableRoles"
+  > = {};
   if (aclPatch.visibility !== undefined) {
     if (!["public", "department", "private", "restricted"].includes(aclPatch.visibility)) {
       throw new AccessControlError(`Unsupported node visibility: ${aclPatch.visibility}`);
     }
     result.visibility = aclPatch.visibility;
   }
-  if (aclPatch.allowedRoles !== undefined) {
-    const allowedRoles = aclPatch.allowedRoles;
-    if (!Array.isArray(allowedRoles)) {
-      throw new AccessControlError("allowedRoles must be an array.");
+  for (const key of ["allowedRoles", "contentEditableRoles", "childAddableRoles", "deletableRoles"] as const) {
+    if (aclPatch[key] !== undefined) {
+      result[key] = sanitizeRoleList(aclPatch[key], key);
     }
-    for (const role of allowedRoles) {
-      if (!["admin", "manager", "member", "guest"].includes(role)) {
-        throw new AccessControlError(`Unsupported allowed role: ${role}`);
-      }
-    }
-    result.allowedRoles = allowedRoles;
   }
   return result;
+}
+
+function sanitizeRoleList(value: unknown, field: string): Array<"admin" | "manager" | "member" | "guest"> {
+  if (!Array.isArray(value)) {
+    throw new AccessControlError(`${field} must be an array.`);
+  }
+  for (const role of value) {
+    if (!["admin", "manager", "member", "guest"].includes(role)) {
+      throw new AccessControlError(`Unsupported role in ${field}: ${role}`);
+    }
+  }
+  return value;
 }
 
 function getOperationTarget(
@@ -335,6 +362,7 @@ function buildFullAddNodeOperation(
 ): AddNodeOperation {
   const parent = requireSnapshot(crdt, operation.parentId);
   const defaults = policyEngine.getAddNodeDefaults();
+  const creatorAndHigherRoles = rolesAtOrAbove(user.role);
   const node: NewTreeNode = {
     id: operation.nodeId ?? createNodeId(user.id, timestamp),
     type: defaults.type,
@@ -348,8 +376,23 @@ function buildFullAddNodeOperation(
     },
     acl: {
       visibility: resolveVisibilityDefault(defaults.visibility, parent),
-      allowedRoles: resolveRoleListDefault(defaults.allowedRoles, parent.acl.allowedRoles),
-      editableRoles: resolveRoleListDefault(defaults.editableRoles, parent.acl.editableRoles),
+      allowedRoles: resolveVisibleRoleListDefault(defaults.allowedRoles, parent.acl.allowedRoles),
+      editableRoles: resolveOperationRoleListDefault(defaults.editableRoles, parent.acl.editableRoles, creatorAndHigherRoles),
+      contentEditableRoles: resolveOperationRoleListDefault(
+        defaults.editableRoles,
+        parent.acl.contentEditableRoles ?? parent.acl.editableRoles,
+        creatorAndHigherRoles
+      ),
+      childAddableRoles: resolveOperationRoleListDefault(
+        defaults.editableRoles,
+        parent.acl.childAddableRoles ?? parent.acl.editableRoles,
+        creatorAndHigherRoles
+      ),
+      deletableRoles: resolveOperationRoleListDefault(
+        defaults.editableRoles,
+        parent.acl.deletableRoles ?? parent.acl.editableRoles,
+        creatorAndHigherRoles
+      ),
       allowedUsers: resolveAllowedUsersDefault(defaults.allowedUsers, user),
       deniedUsers: []
     },
@@ -381,15 +424,38 @@ function resolveVisibilityDefault(
   return value === "inherit-parent" ? parent.acl.visibility : value;
 }
 
-function resolveRoleListDefault(
+function resolveVisibleRoleListDefault(
   value: "inherit-parent",
   parentValue: TreeNodeSnapshot["acl"]["allowedRoles"]
 ): TreeNodeSnapshot["acl"]["allowedRoles"] {
   return value === "inherit-parent" ? parentValue : parentValue;
 }
 
+function resolveOperationRoleListDefault(
+  value: "inherit-parent",
+  parentValue: TreeNodeSnapshot["acl"]["allowedRoles"],
+  creatorAndHigherRoles: TreeNodeSnapshot["acl"]["allowedRoles"]
+): TreeNodeSnapshot["acl"]["allowedRoles"] {
+  return value === "inherit-parent" ? creatorAndHigherRoles : parentValue;
+}
+
 function resolveAllowedUsersDefault(value: "current-user", user: User): string[] {
   return value === "current-user" ? [user.id] : [user.id];
+}
+
+function rolesAtOrAbove(role: User["role"]): TreeNodeSnapshot["acl"]["allowedRoles"] {
+  switch (role) {
+    case "admin":
+      return ["admin"];
+    case "manager":
+      return ["admin", "manager"];
+    case "member":
+      return ["admin", "manager", "member"];
+    case "guest":
+      return ["admin", "manager", "member", "guest"];
+    default:
+      return assertNever(role);
+  }
 }
 
 function requireSnapshot(crdt: CrdtDocument, nodeId: NodeId): TreeNodeSnapshot {

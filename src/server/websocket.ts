@@ -20,7 +20,8 @@ export function handleWebSocketConnection(
   socket: WebSocket,
   request: IncomingMessage,
   context: CollaborationContext,
-  clients: Set<WebSocketClient>
+  clients: Set<WebSocketClient>,
+  onDocumentChanged: () => void = () => {}
 ): void {
   const url = new URL(request.url ?? "/", "http://localhost");
   const client: WebSocketClient = {
@@ -50,7 +51,7 @@ export function handleWebSocketConnection(
   socket.on("message", (raw) => {
     try {
       const message = JSON.parse(raw.toString()) as ClientMessage;
-      handleClientMessage(client, message, context, clients);
+      handleClientMessage(client, message, context, clients, onDocumentChanged);
     } catch (error) {
       sendServerMessage(socket, errorMessage(error));
     }
@@ -86,7 +87,8 @@ function handleClientMessage(
   client: WebSocketClient,
   message: ClientMessage,
   context: CollaborationContext,
-  clients: Set<WebSocketClient>
+  clients: Set<WebSocketClient>,
+  onDocumentChanged: () => void = () => {}
 ): void {
   if (message.type === "ping") {
     sendServerMessage(client.socket, { type: "pong" });
@@ -115,6 +117,7 @@ function handleClientMessage(
       stateVector: result.stateVector
     });
     if (!result.deduplicated) {
+      onDocumentChanged();
       broadcastViews(context, clients);
     }
     return;
