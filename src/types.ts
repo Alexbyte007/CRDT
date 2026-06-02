@@ -186,6 +186,7 @@ export interface ViewAddNodeOperation {
 export interface ViewDeleteNodeOperation {
   type: "deleteNode";
   nodeId: NodeId;
+  confirmedImpact?: boolean;
 }
 
 export interface ViewDeleteNodeKeepChildrenOperation {

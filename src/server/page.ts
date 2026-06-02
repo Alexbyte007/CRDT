@@ -938,7 +938,7 @@ export function renderHomePage(): string {
           return;
         }
 
-        await submitOperation({ type: "deleteNode", nodeId });
+        await submitOperation({ type: "deleteNode", nodeId, confirmedImpact: true });
         delete state.editing.drafts[nodeId];
       }
 

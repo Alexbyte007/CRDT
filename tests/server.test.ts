@@ -254,6 +254,51 @@ describe("collaboration server", () => {
     expect(leafImpact.visibleNodes).toEqual([]);
     expect(leafImpact.affectedUsers).toEqual([]);
     expect(leafImpact.blocksSilentDelete).toBe(false);
+
+    const unconfirmedDelete = await fetch(`${baseUrl}/api/operations`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(admin.token)
+      },
+      body: JSON.stringify({
+        operation: {
+          type: "deleteNode",
+          nodeId: "node-impact-parent"
+        }
+      })
+    });
+    const unconfirmedBody = (await unconfirmedDelete.json()) as {
+      ok: false;
+      error: { name: string; message: string };
+    };
+
+    expect(unconfirmedDelete.status).toBe(400);
+    expect(unconfirmedBody.error.name).toBe("AccessControlError");
+    expect(unconfirmedBody.error.message).toContain("Confirm the impact");
+    expect(getDocumentSnapshot(runningServer!.context.crdt).nodes["node-impact-parent"]).toBeDefined();
+
+    const confirmedDelete = await fetch(`${baseUrl}/api/operations`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(admin.token)
+      },
+      body: JSON.stringify({
+        operation: {
+          type: "deleteNode",
+          nodeId: "node-impact-parent",
+          confirmedImpact: true
+        }
+      })
+    });
+
+    expect(confirmedDelete.status).toBe(200);
+    const snapshot = getDocumentSnapshot(runningServer!.context.crdt);
+    expect(snapshot.nodes["node-impact-parent"]).toBeUndefined();
+    expect(snapshot.nodes["node-impact-public-child"]).toBeUndefined();
+    expect(snapshot.tombstones["node-impact-parent"]).toBeDefined();
+    expect(snapshot.tombstones["node-impact-public-child"]).toBeDefined();
   });
 
   it("allows direct delete when descendants do not expose broader visibility", async () => {
