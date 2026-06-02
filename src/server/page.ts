@@ -208,10 +208,17 @@ export function renderHomePage(): string {
         margin-top: 10px;
       }
 
-      .node-actions button {
+        .node-actions button {
         width: auto;
         padding: 6px 9px;
         font-size: 12px;
+      }
+
+      .node-policy {
+        display: grid;
+        gap: 6px;
+        margin-top: 10px;
+        max-width: 260px;
       }
 
       .meta {
@@ -235,6 +242,75 @@ export function renderHomePage(): string {
         min-height: 20px;
         font-size: 13px;
         color: #535b66;
+        white-space: pre-wrap;
+      }
+
+      .modal {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 20px;
+        background: rgba(15, 23, 42, 0.45);
+        z-index: 50;
+      }
+
+      .modal.hidden {
+        display: none;
+      }
+
+      .modal-card {
+        position: relative;
+        width: min(720px, 100%);
+        background: #ffffff;
+        border-radius: 8px;
+        border: 1px solid #dfe3ea;
+        padding: 18px;
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.24);
+      }
+
+      .modal-title {
+        margin: 0 0 8px;
+        font-size: 18px;
+      }
+
+      .modal-copy {
+        margin: 0 0 12px;
+        color: #535b66;
+        line-height: 1.5;
+      }
+
+      .modal-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 12px;
+      }
+
+      .modal-list {
+        margin: 0;
+        padding: 10px 12px;
+        border: 1px solid #e1e5ec;
+        border-radius: 8px;
+        background: #fbfcfe;
+        max-height: 180px;
+        overflow: auto;
+        white-space: pre-wrap;
+        color: #303741;
+        font-size: 13px;
+      }
+
+      .modal-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 16px;
+        justify-content: flex-end;
+      }
+
+      .modal-actions button {
+        width: auto;
+        min-width: 108px;
       }
 
       .sync-state {
@@ -323,6 +399,28 @@ export function renderHomePage(): string {
       </section>
     </main>
 
+    <div id="deleteDialog" class="modal hidden" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="deleteDialogTitle">
+        <h2 id="deleteDialogTitle" class="modal-title">删除影响分析</h2>
+        <p id="deleteDialogCopy" class="modal-copy"></p>
+        <div class="modal-grid">
+          <div>
+            <label>其他用户可见节点</label>
+            <div id="deleteDialogVisibleNodes" class="modal-list"></div>
+          </div>
+          <div>
+            <label>受影响用户</label>
+            <div id="deleteDialogUsers" class="modal-list"></div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button id="deleteDialogCancel" type="button" class="secondary">取消</button>
+          <button id="deleteDialogKeepChildren" type="button" class="secondary">保留子节点</button>
+          <button id="deleteDialogForce" type="button" class="danger">强制删除整棵树</button>
+        </div>
+      </div>
+    </div>
+
     <script>
       const state = {
         token: "",
@@ -355,10 +453,18 @@ export function renderHomePage(): string {
         queueLength: document.querySelector("#queueLength"),
         syncOffline: document.querySelector("#syncOffline"),
         status: document.querySelector("#status"),
-        tree: document.querySelector("#tree")
+        tree: document.querySelector("#tree"),
+        deleteDialog: document.querySelector("#deleteDialog"),
+        deleteDialogCopy: document.querySelector("#deleteDialogCopy"),
+        deleteDialogVisibleNodes: document.querySelector("#deleteDialogVisibleNodes"),
+        deleteDialogUsers: document.querySelector("#deleteDialogUsers"),
+        deleteDialogCancel: document.querySelector("#deleteDialogCancel"),
+        deleteDialogKeepChildren: document.querySelector("#deleteDialogKeepChildren"),
+        deleteDialogForce: document.querySelector("#deleteDialogForce")
       };
 
       const offlineStorageKey = "crdt-editor-offline-queue-v1";
+      let deleteDialogResolver = null;
 
       function currentUserId() {
         return state.user ? state.user.id : els.loginUser.value;
@@ -426,6 +532,7 @@ export function renderHomePage(): string {
         setStatus("已登录：" + state.user.name);
         await loadView();
         render();
+        connectWebSocket();
       }
 
       async function logout() {
@@ -526,6 +633,45 @@ export function renderHomePage(): string {
         meta.textContent = node.id + " · " + node.type + " · " + permissionText(node.permissions);
         box.appendChild(meta);
 
+        if (node.permissions.canEditAcl && node.acl && node.acl.visibility) {
+          const policyPanel = document.createElement("div");
+          policyPanel.className = "node-policy";
+          const visibilityPolicy = renderAclSelect("谁能看", audienceFromAcl(node.acl), (audience) =>
+            updateNodeAcl(node.id, aclPatchFromAudience(audience), "节点查看权限已更新")
+          );
+          const editPolicy = renderAclSelect("谁能改", audienceFromRoles(node.acl.contentEditableRoles), (audience) =>
+            updateNodeAcl(
+              node.id,
+              { contentEditableRoles: rolesFromAudience(audience) },
+              "节点编辑权限已更新"
+            )
+          );
+          const addPolicy = renderAclSelect("谁能添加子节点", audienceFromRoles(node.acl.childAddableRoles), (audience) =>
+            updateNodeAcl(
+              node.id,
+              { childAddableRoles: rolesFromAudience(audience) },
+              "节点添加权限已更新"
+            )
+          );
+          const deletePolicy = renderAclSelect("谁能删除", audienceFromRoles(node.acl.deletableRoles), (audience) =>
+            updateNodeAcl(
+              node.id,
+              { deletableRoles: rolesFromAudience(audience) },
+              "节点删除权限已更新"
+            )
+          );
+          const operationPolicies = [editPolicy, addPolicy, deletePolicy];
+          visibilityPolicy.select.addEventListener("change", () =>
+            syncOperationAclControls(visibilityPolicy.select, operationPolicies)
+          );
+          syncOperationAclControls(visibilityPolicy.select, operationPolicies);
+          policyPanel.appendChild(visibilityPolicy.element);
+          policyPanel.appendChild(editPolicy.element);
+          policyPanel.appendChild(addPolicy.element);
+          policyPanel.appendChild(deletePolicy.element);
+          box.appendChild(policyPanel);
+        }
+
         if (node.permissions.canEditContent) {
           const contentInput = document.createElement("textarea");
           contentInput.value = draft.content;
@@ -574,6 +720,36 @@ export function renderHomePage(): string {
           li.appendChild(ul);
         }
         return li;
+      }
+
+      function renderAclSelect(label, value, onChange) {
+        const policy = document.createElement("label");
+        policy.className = "node-policy";
+        policy.textContent = label;
+        const audience = document.createElement("select");
+        audience.dataset.field = "audience";
+        audience.innerHTML =
+          '<option value="all">所有人</option>' +
+          '<option value="admin">仅管理员</option>' +
+          '<option value="admin-manager">管理员和研发经理</option>' +
+          '<option value="dev-team">管理员和研发团队</option>';
+        audience.value = value;
+        audience.addEventListener("change", () => onChange(audience.value));
+        policy.appendChild(audience);
+        return {
+          element: policy,
+          select: audience
+        };
+      }
+
+      function syncOperationAclControls(visibilitySelect, operationPolicies) {
+        const adminOnly = visibilitySelect.value === "admin";
+        for (const policy of operationPolicies) {
+          policy.select.disabled = adminOnly;
+          if (adminOnly) {
+            policy.select.value = "admin";
+          }
+        }
       }
 
       function captureEditorFocus() {
@@ -739,9 +915,173 @@ export function renderHomePage(): string {
       }
 
       async function deleteTreeNode(nodeId) {
-        if (!window.confirm("确定删除当前节点吗？")) return;
-        await submitOperation({ type: "deleteNode", nodeId });
+        const impact = await requestJson("/api/delete-impact?nodeId=" + encodeURIComponent(nodeId));
+        if (!impact.blocksSilentDelete) {
+          await submitOperation({ type: "deleteNode", nodeId });
+          delete state.editing.drafts[nodeId];
+          return;
+        }
+
+        if (!state.user || state.user.role !== "admin") {
+          setStatus(formatDeleteRejectedMessage(impact));
+          return;
+        }
+
+        const choice = await showDeleteImpactDialog(impact);
+        if (!choice) {
+          return;
+        }
+
+        if (choice === "keepChildren") {
+          await submitOperation({ type: "deleteNodeKeepChildren", nodeId });
+          delete state.editing.drafts[nodeId];
+          return;
+        }
+
+        await submitOperation({ type: "deleteNode", nodeId, confirmedImpact: true });
         delete state.editing.drafts[nodeId];
+      }
+
+      function formatDeleteRejectedMessage(impact) {
+        const childProjects = impact.visibleNodes
+          .map((node) => node.title + " (" + node.id + ")")
+          .join("、");
+        return (
+          "删除被拒绝：该父项目下存在更低权限用户仍可见的子项目。\\n" +
+          "请联系管理员申请权限，或者先处理 " + (childProjects || "相关子项目") + "。"
+        );
+      }
+
+      function formatDeleteImpact(impact) {
+        const visibleNodes = impact.visibleNodes
+          .map((node) => "- " + node.title + " (" + node.id + ")")
+          .join("\\n");
+        const affectedUsers = impact.affectedUsers
+          .map((user) => "- " + user.name + " / " + user.role + " / " + user.department)
+          .join("\\n");
+        return (
+          "删除已阻止：该子树包含其他用户可见内容。\\n" +
+          "将删除节点数：" + impact.deleteCount + "\\n" +
+          "其他用户可见节点：\\n" + (visibleNodes || "- 无") + "\\n" +
+          "受影响用户：\\n" + (affectedUsers || "- 无")
+        );
+      }
+
+      function showDeleteImpactDialog(impact) {
+        return new Promise((resolve) => {
+          if (deleteDialogResolver) {
+            deleteDialogResolver(null);
+          }
+          deleteDialogResolver = resolve;
+          els.deleteDialogCopy.textContent = formatDeleteImpactCopy(impact);
+          els.deleteDialogVisibleNodes.textContent = formatDeleteImpactList(impact.visibleNodes, "暂无");
+          els.deleteDialogUsers.textContent = formatDeleteImpactList(impact.affectedUsers, "暂无");
+          els.deleteDialogKeepChildren.disabled = impact.deleteCount <= 1;
+          els.deleteDialog.classList.remove("hidden");
+          els.deleteDialog.setAttribute("aria-hidden", "false");
+          setStatus(
+            impact.blocksSilentDelete
+              ? "检测到其他用户可见内容，请选择处理方式"
+              : "请确认删除方式"
+          );
+        });
+      }
+
+      function closeDeleteImpactDialog(result) {
+        if (!deleteDialogResolver) return;
+        const resolve = deleteDialogResolver;
+        deleteDialogResolver = null;
+        els.deleteDialog.classList.add("hidden");
+        els.deleteDialog.setAttribute("aria-hidden", "true");
+        resolve(result);
+      }
+
+      function formatDeleteImpactCopy(impact) {
+        return (
+          "将删除 " +
+          impact.deleteCount +
+          " 个节点。选择一种处理方式："
+        );
+      }
+
+      function formatDeleteImpactList(items, emptyText) {
+        if (!items || items.length === 0) {
+          return emptyText;
+        }
+        return items
+          .map((item) =>
+            "name" in item
+              ? "- " + item.name + " / " + item.role + " / " + item.department
+              : "- " + item.title + " (" + item.id + ")"
+          )
+          .join("\\n");
+      }
+
+      function audienceFromAcl(acl) {
+        const roles = acl.allowedRoles || [];
+        if (acl.visibility === "public") return "all";
+        if (acl.visibility === "restricted" && sameRoles(roles, ["admin"])) return "admin";
+        if (acl.visibility === "restricted" && sameRoles(roles, ["admin", "manager"])) return "admin-manager";
+        if (acl.visibility === "restricted" && sameRoles(roles, ["admin", "manager", "member"])) return "dev-team";
+        if (acl.visibility === "department" && sameRoles(roles, ["admin", "manager", "member"])) return "dev-team";
+        return "all";
+      }
+
+      function audienceFromRoles(roles) {
+        const normalized = roles || [];
+        if (sameRoles(normalized, ["admin"])) return "admin";
+        if (sameRoles(normalized, ["admin", "manager"])) return "admin-manager";
+        if (sameRoles(normalized, ["admin", "manager", "member"])) return "dev-team";
+        if (sameRoles(normalized, ["admin", "manager", "member", "guest"])) return "all";
+        return "admin";
+      }
+
+      function sameRoles(left, right) {
+        return left.length === right.length && right.every((role) => left.includes(role));
+      }
+
+      function rolesFromAudience(audience) {
+        if (audience === "admin") return ["admin"];
+        if (audience === "admin-manager") return ["admin", "manager"];
+        if (audience === "dev-team") return ["admin", "manager", "member"];
+        return ["admin", "manager", "member", "guest"];
+      }
+
+      function aclPatchFromAudience(audience) {
+        if (audience === "admin") {
+          return {
+            visibility: "restricted",
+            allowedRoles: ["admin"],
+            contentEditableRoles: ["admin"],
+            childAddableRoles: ["admin"],
+            deletableRoles: ["admin"]
+          };
+        }
+        if (audience === "admin-manager") {
+          return {
+            visibility: "restricted",
+            allowedRoles: ["admin", "manager"]
+          };
+        }
+        if (audience === "dev-team") {
+          return {
+            visibility: "restricted",
+            allowedRoles: ["admin", "manager", "member"]
+          };
+        }
+        return {
+          visibility: "public",
+          allowedRoles: ["admin", "manager", "member", "guest"]
+        };
+      }
+
+      async function updateNodeAcl(nodeId, aclPatch, message) {
+        await submitOperation({
+          type: "updateAcl",
+          nodeId,
+          aclPatch
+        });
+        setStatus(message);
       }
 
       async function submitOperation(operation) {
@@ -802,6 +1142,14 @@ export function renderHomePage(): string {
           await syncOfflineQueue();
         } catch (error) {
           setStatus(error.message);
+        }
+      });
+      els.deleteDialogCancel.addEventListener("click", () => closeDeleteImpactDialog(null));
+      els.deleteDialogKeepChildren.addEventListener("click", () => closeDeleteImpactDialog("keepChildren"));
+      els.deleteDialogForce.addEventListener("click", () => closeDeleteImpactDialog("forceDelete"));
+      els.deleteDialog.addEventListener("click", (event) => {
+        if (event.target === els.deleteDialog) {
+          closeDeleteImpactDialog(null);
         }
       });
 

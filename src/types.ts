@@ -7,9 +7,11 @@ export type NodeVisibility = "public" | "department" | "private" | "restricted";
 export type OperationType =
   | "addNode"
   | "deleteNode"
+  | "deleteNodeKeepChildren"
   | "renameNode"
   | "updateContent"
-  | "updateAttrs";
+  | "updateAttrs"
+  | "updateAcl";
 
 export interface User {
   id: UserId;
@@ -37,6 +39,9 @@ export interface NodeAcl {
   visibility: NodeVisibility;
   allowedRoles: UserRole[];
   editableRoles: UserRole[];
+  contentEditableRoles?: UserRole[];
+  childAddableRoles?: UserRole[];
+  deletableRoles?: UserRole[];
   allowedUsers: UserId[];
   deniedUsers: UserId[];
 }
@@ -66,9 +71,11 @@ export interface DocumentSnapshot {
 export type FullDocOperation =
   | AddNodeOperation
   | DeleteNodeOperation
+  | DeleteNodeKeepChildrenOperation
   | RenameNodeOperation
   | UpdateContentOperation
-  | UpdateAttrsOperation;
+  | UpdateAttrsOperation
+  | UpdateAclOperation;
 
 export interface AddNodeOperation {
   type: "addNode";
@@ -81,6 +88,13 @@ export interface AddNodeOperation {
 
 export interface DeleteNodeOperation {
   type: "deleteNode";
+  nodeId: NodeId;
+  actorId: UserId;
+  timestamp?: number;
+}
+
+export interface DeleteNodeKeepChildrenOperation {
+  type: "deleteNodeKeepChildren";
   nodeId: NodeId;
   actorId: UserId;
   timestamp?: number;
@@ -110,6 +124,14 @@ export interface UpdateAttrsOperation {
   timestamp?: number;
 }
 
+export interface UpdateAclOperation {
+  type: "updateAcl";
+  nodeId: NodeId;
+  aclPatch: Partial<NodeAcl>;
+  actorId: UserId;
+  timestamp?: number;
+}
+
 export interface UserView {
   userId: UserId;
   docId: string;
@@ -124,8 +146,14 @@ export interface ViewNode {
   title: string;
   content?: string;
   attrs?: Partial<NodeAttrs>;
+  acl?: Pick<
+    NodeAcl,
+    "visibility" | "allowedRoles" | "contentEditableRoles" | "childAddableRoles" | "deletableRoles"
+  >;
   children: ViewNode[];
   permissions: ViewPermissions;
+  virtual?: boolean;
+  virtualReason?: "restrictedPath";
 }
 
 export interface ViewPermissions {
@@ -134,14 +162,17 @@ export interface ViewPermissions {
   canRename: boolean;
   canEditContent: boolean;
   canEditAttrs: boolean;
+  canEditAcl: boolean;
 }
 
 export type ViewOperation =
   | ViewAddNodeOperation
   | ViewDeleteNodeOperation
+  | ViewDeleteNodeKeepChildrenOperation
   | ViewRenameNodeOperation
   | ViewUpdateContentOperation
-  | ViewUpdateAttrsOperation;
+  | ViewUpdateAttrsOperation
+  | ViewUpdateAclOperation;
 
 export interface ViewAddNodeOperation {
   type: "addNode";
@@ -154,6 +185,12 @@ export interface ViewAddNodeOperation {
 
 export interface ViewDeleteNodeOperation {
   type: "deleteNode";
+  nodeId: NodeId;
+  confirmedImpact?: boolean;
+}
+
+export interface ViewDeleteNodeKeepChildrenOperation {
+  type: "deleteNodeKeepChildren";
   nodeId: NodeId;
 }
 
@@ -173,6 +210,15 @@ export interface ViewUpdateAttrsOperation {
   type: "updateAttrs";
   nodeId: NodeId;
   attrsPatch: Partial<NodeAttrs>;
+}
+
+export interface ViewUpdateAclOperation {
+  type: "updateAcl";
+  nodeId: NodeId;
+  aclPatch: Pick<
+    Partial<NodeAcl>,
+    "visibility" | "allowedRoles" | "contentEditableRoles" | "childAddableRoles" | "deletableRoles"
+  >;
 }
 
 export interface ViewOperationEnvelope {

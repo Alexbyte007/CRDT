@@ -3,6 +3,7 @@ import { nodeIsDeleted } from "../crdt/conflicts";
 import { getNodeSnapshot } from "../crdt/snapshot";
 import { encodeStateVector } from "../crdt/state-vector";
 import { getView, putOperation } from "../view/transform";
+import { analyzeDeleteImpact } from "./delete-impact";
 import { AccessControlError, type User, type UserView, type ViewOperation, type ViewOperationEnvelope } from "../types";
 import type {
   BatchViewOperationEnvelope,
@@ -108,9 +109,34 @@ function preflightViewOperation(
     const action =
       operation.type === "addNode"
         ? "add a child under"
-        : `${operation.type} on`;
+        : operation.type === "deleteNodeKeepChildren"
+          ? "delete a node while preserving its children on"
+          : `${operation.type} on`;
     throw new AccessControlError(
       `Offline operation rejected: ${user.id} is no longer allowed to ${action} node ${targetId}.`
+    );
+  }
+
+  if (operation.type === "deleteNode") {
+    const impact = analyzeDeleteImpact(context, user, operation.nodeId);
+    if (impact.blocksSilentDelete) {
+      const nodeList = impact.visibleNodes
+        .map((node) => `${node.title} (${node.id})`)
+        .join(", ");
+      if (user.role === "admin" && operation.confirmedImpact === true) {
+        return;
+      }
+      throw new AccessControlError(
+        user.role === "admin"
+          ? `Delete rejected: descendant nodes are visible to broader audiences. Confirm the impact before cascading deletion: ${nodeList}.`
+          : `Delete rejected: descendant nodes are visible to broader audiences. Contact an administrator or handle these child projects first: ${nodeList}.`
+      );
+    }
+  }
+
+  if (operation.type === "deleteNodeKeepChildren" && user.role !== "admin") {
+    throw new AccessControlError(
+      "Delete rejected: only administrators can delete a parent while preserving child nodes."
     );
   }
 }

@@ -10,7 +10,7 @@ import { createSampleDocument, sampleUsers } from "../src/fixtures/sample";
 import { applyBatchViewOperationRequest } from "../src/server/operations";
 import type { CollaborationContext } from "../src/server/types";
 import { getView, putOperation } from "../src/view/transform";
-import type { User, ViewNode } from "../src/types";
+import type { UpdateAclOperation, User, ViewNode } from "../src/types";
 
 describe("concurrent heterogeneous view sync", () => {
   it("does not lose concurrent adds from manager and admin", () => {
@@ -98,6 +98,18 @@ describe("concurrent heterogeneous view sync", () => {
 
   it("uses delete-wins when admin updates content while manager deletes the same node", () => {
     const { left: adminReplica, right: managerReplica } = forkSampleDocument();
+    const grantManagerDelete: UpdateAclOperation = {
+      type: "updateAcl",
+      nodeId: "node-dev-plan",
+      aclPatch: {
+        deletableRoles: ["admin", "manager"]
+      },
+      actorId: "u-admin",
+      timestamp: 1
+    };
+
+    applyFullDocOperation(adminReplica, grantManagerDelete);
+    applyFullDocOperation(managerReplica, grantManagerDelete);
 
     applyFullDocOperation(adminReplica, {
       type: "updateContent",
@@ -272,6 +284,165 @@ describe("concurrent heterogeneous view sync", () => {
     });
     expect(snapshot.nodes["node-valid-after-delete"]).toBeDefined();
     expect(snapshot.nodes["node-module-a"]).toBeUndefined();
+  });
+
+  it("rejects concurrent edits and child adds after a confirmed cascade deletes a visible descendant", () => {
+    const crdt = createSampleDocument();
+    const admin = user("u-admin");
+    const member = user("u-dev-member");
+    const context: CollaborationContext = {
+      crdt,
+      users: new Map(sampleUsers.map((candidate) => [candidate.id, candidate])),
+      now: () => 12,
+      processedOperationIds: new Set(),
+      sessions: new Map(),
+      policyVersion: 1,
+      policyEngine: defaultPolicyEngine
+    };
+
+    applyFullDocOperation(
+      crdt,
+      putOperation(
+        crdt,
+        admin,
+        {
+          type: "addNode",
+          parentId: "node-root",
+          nodeId: "node-cascade-parent",
+          title: "管理员父项目",
+          content: ""
+        },
+        { now: 2 }
+      )
+    );
+    applyFullDocOperation(
+      crdt,
+      putOperation(
+        crdt,
+        admin,
+        {
+          type: "updateAcl",
+          nodeId: "node-cascade-parent",
+          aclPatch: {
+            visibility: "restricted",
+            allowedRoles: ["admin"],
+            childAddableRoles: ["admin"]
+          }
+        },
+        { now: 3 }
+      )
+    );
+    applyFullDocOperation(
+      crdt,
+      putOperation(
+        crdt,
+        admin,
+        {
+          type: "addNode",
+          parentId: "node-cascade-parent",
+          nodeId: "node-cascade-child",
+          title: "研发成员可见子项目",
+          content: "旧内容"
+        },
+        { now: 4 }
+      )
+    );
+    applyFullDocOperation(
+      crdt,
+      putOperation(
+        crdt,
+        admin,
+        {
+          type: "updateAcl",
+          nodeId: "node-cascade-child",
+          aclPatch: {
+            visibility: "restricted",
+            allowedRoles: ["admin", "manager", "member"],
+            contentEditableRoles: ["admin", "manager", "member"],
+            childAddableRoles: ["admin", "manager", "member"]
+          }
+        },
+        { now: 5 }
+      )
+    );
+
+    const baseStateVector = encodeStateVector(crdt);
+    expect(flattenIds(getView(crdt, member, { now: 6 }).roots)).toContain("node-cascade-child");
+
+    expect(() =>
+      applyBatchViewOperationRequest(context, {
+        user: admin,
+        operations: [
+          {
+            id: "admin-unconfirmed-cascade",
+            baseStateVector,
+            createdAt: 6,
+            operation: {
+              type: "deleteNode",
+              nodeId: "node-cascade-parent"
+            }
+          }
+        ]
+      })
+    ).not.toThrow();
+    expect(getNodeSnapshot(crdt, "node-cascade-parent")).toBeDefined();
+
+    const adminDelete = applyBatchViewOperationRequest(context, {
+      user: admin,
+      operations: [
+        {
+          id: "admin-confirmed-cascade",
+          baseStateVector,
+          createdAt: 7,
+          operation: {
+            type: "deleteNode",
+            nodeId: "node-cascade-parent",
+            confirmedImpact: true
+          }
+        }
+      ]
+    });
+    expect(adminDelete.applied).toEqual(["admin-confirmed-cascade"]);
+
+    const memberReplay = applyBatchViewOperationRequest(context, {
+      user: member,
+      operations: [
+        {
+          id: "member-concurrent-edit-deleted-child",
+          baseStateVector,
+          createdAt: 8,
+          operation: {
+            type: "updateContent",
+            nodeId: "node-cascade-child",
+            content: "成员并发修改"
+          }
+        },
+        {
+          id: "member-concurrent-add-under-deleted-child",
+          baseStateVector,
+          createdAt: 9,
+          operation: {
+            type: "addNode",
+            parentId: "node-cascade-child",
+            nodeId: "node-cascade-grandchild",
+            title: "成员并发新增"
+          }
+        }
+      ]
+    });
+
+    const snapshot = getDocumentSnapshot(crdt);
+    expect(memberReplay.applied).toEqual([]);
+    expect(memberReplay.rejected).toHaveLength(2);
+    expect(memberReplay.rejected.map((item) => item.error.code)).toEqual([
+      "TARGET_DELETED",
+      "TARGET_DELETED"
+    ]);
+    expect(snapshot.nodes["node-cascade-parent"]).toBeUndefined();
+    expect(snapshot.nodes["node-cascade-child"]).toBeUndefined();
+    expect(snapshot.nodes["node-cascade-grandchild"]).toBeUndefined();
+    expect(snapshot.tombstones["node-cascade-parent"]).toBeDefined();
+    expect(snapshot.tombstones["node-cascade-child"]).toBeDefined();
   });
 });
 

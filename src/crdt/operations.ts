@@ -2,11 +2,13 @@ import {
   type AddNodeOperation,
   CrdtDocumentError,
   type DeleteNodeOperation,
+  type DeleteNodeKeepChildrenOperation,
   type FullDocOperation,
   type NewTreeNode,
   type NodeId,
   type RenameNodeOperation,
   type TreeNodeSnapshot,
+  type UpdateAclOperation,
   type UpdateAttrsOperation,
   type UpdateContentOperation
 } from "../types";
@@ -15,6 +17,7 @@ import { reconcileDocumentConflicts } from "./conflicts";
 import {
   createYNode,
   type CrdtDocument,
+  getAclMap,
   getAttrsMap,
   getChildrenArray,
   getNodeMap,
@@ -31,6 +34,9 @@ export function applyFullDocOperation(crdt: CrdtDocument, operation: FullDocOper
     case "deleteNode":
       deleteNode(crdt, operation);
       break;
+    case "deleteNodeKeepChildren":
+      deleteNodeKeepChildren(crdt, operation);
+      break;
     case "renameNode":
       renameNode(crdt, operation);
       break;
@@ -39,6 +45,9 @@ export function applyFullDocOperation(crdt: CrdtDocument, operation: FullDocOper
       break;
     case "updateAttrs":
       updateAttrs(crdt, operation);
+      break;
+    case "updateAcl":
+      updateAcl(crdt, operation);
       break;
     default:
       assertNever(operation);
@@ -114,6 +123,62 @@ export function deleteNode(crdt: CrdtDocument, operation: DeleteNodeOperation): 
   return deletedSnapshots;
 }
 
+export function deleteNodeKeepChildren(
+  crdt: CrdtDocument,
+  operation: DeleteNodeKeepChildrenOperation
+): TreeNodeSnapshot[] {
+  const timestamp = operation.timestamp ?? Date.now();
+  const target = requireNode(crdt, operation.nodeId);
+  const targetSnapshot = yNodeToSnapshot(target);
+  const deletedSnapshots = [targetSnapshot];
+  const childIds = [...targetSnapshot.children];
+
+  crdt.doc.transact(() => {
+    if (targetSnapshot.parentId === null) {
+      const rootIndex = indexOfId(crdt.rootIds, operation.nodeId);
+      if (rootIndex >= 0) {
+        crdt.rootIds.delete(rootIndex, 1);
+        if (childIds.length > 0) {
+          crdt.rootIds.insert(rootIndex, childIds);
+        }
+      }
+    } else {
+      const parent = getNodeMap(crdt, targetSnapshot.parentId);
+      if (parent) {
+        const siblings = getChildrenArray(parent);
+        const targetIndex = indexOfId(siblings, operation.nodeId);
+        if (targetIndex >= 0) {
+          siblings.delete(targetIndex, 1);
+          if (childIds.length > 0) {
+            siblings.insert(targetIndex, childIds);
+          }
+        }
+        touchNode(parent, operation.actorId, timestamp);
+      }
+    }
+
+    for (const childId of childIds) {
+      const child = getNodeMap(crdt, childId);
+      if (child) {
+        child.set("parentId", targetSnapshot.parentId);
+        touchNode(child, operation.actorId, timestamp);
+      }
+    }
+
+    const tombstone = createYNode({
+      ...targetSnapshot,
+      children: [],
+      updatedBy: operation.actorId,
+      updatedAt: timestamp
+    });
+    crdt.tombstones.set(targetSnapshot.id, tombstone);
+    crdt.nodes.delete(targetSnapshot.id);
+    touchDocument(crdt, timestamp);
+  });
+
+  return deletedSnapshots;
+}
+
 export function renameNode(crdt: CrdtDocument, operation: RenameNodeOperation): TreeNodeSnapshot {
   const timestamp = operation.timestamp ?? Date.now();
   const node = requireNode(crdt, operation.nodeId);
@@ -154,6 +219,26 @@ export function updateAttrs(crdt: CrdtDocument, operation: UpdateAttrsOperation)
         attrs.delete(key);
       } else {
         attrs.set(key, value);
+      }
+    }
+    touchNode(node, operation.actorId, timestamp);
+    touchDocument(crdt, timestamp);
+  });
+
+  return yNodeToSnapshot(node);
+}
+
+export function updateAcl(crdt: CrdtDocument, operation: UpdateAclOperation): TreeNodeSnapshot {
+  const timestamp = operation.timestamp ?? Date.now();
+  const node = requireNode(crdt, operation.nodeId);
+
+  crdt.doc.transact(() => {
+    const acl = getAclMap(node);
+    for (const [key, value] of Object.entries(operation.aclPatch)) {
+      if (value === undefined) {
+        acl.delete(key);
+      } else {
+        acl.set(key, value);
       }
     }
     touchNode(node, operation.actorId, timestamp);
@@ -218,6 +303,15 @@ function removeId(array: Y.Array<NodeId>, nodeId: NodeId): void {
       array.delete(index, 1);
     }
   }
+}
+
+function indexOfId(array: Y.Array<NodeId>, nodeId: NodeId): number {
+  for (let index = 0; index < array.length; index += 1) {
+    if (array.get(index) === nodeId) {
+      return index;
+    }
+  }
+  return -1;
 }
 
 function clampIndex(index: number, length: number): number {

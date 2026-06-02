@@ -1,4 +1,4 @@
-import type { NodeAttrs, OperationType, TreeNodeSnapshot, User } from "../types";
+import type { NodeAcl, NodeAttrs, OperationType, TreeNodeSnapshot, User, UserRole } from "../types";
 import type { AttrRule, PrivacyPolicyConfig } from "./policy-types";
 import { evaluateExpression } from "./expression";
 
@@ -42,10 +42,42 @@ export class PolicyEngine {
       return false;
     }
 
+    if (operationType === "updateAcl") {
+      return user.role === "admin";
+    }
+
+    if (user.role === "admin") {
+      return true;
+    }
+
+    const roles = this.rolesForOperation(node.acl, operationType);
+    if (roles) {
+      return roles.includes(user.role);
+    }
+
     return this.config.put.operationRules.some(
       (rule) =>
         rule.operations.includes(operationType) && evaluateExpression(rule.match, { user, node })
     );
+  }
+
+  private rolesForOperation(acl: NodeAcl, operationType: OperationType): UserRole[] | undefined {
+    switch (operationType) {
+      case "renameNode":
+      case "updateContent":
+        return acl.contentEditableRoles ?? acl.editableRoles;
+      case "addNode":
+        return acl.childAddableRoles ?? acl.editableRoles;
+      case "deleteNode":
+      case "deleteNodeKeepChildren":
+        return acl.deletableRoles ?? acl.editableRoles;
+      case "updateAttrs":
+        return acl.editableRoles;
+      case "updateAcl":
+        return ["admin"];
+      default:
+        return undefined;
+    }
   }
 
   canEditAttr(user: User, node: TreeNodeSnapshot, attr: keyof NodeAttrs, value?: unknown): boolean {

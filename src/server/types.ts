@@ -10,11 +10,14 @@ import type {
   ViewOperation,
   ViewOperationEnvelope
 } from "../types";
+import type { DeleteImpactResult } from "./delete-impact";
+import type { SqliteDocumentStore } from "./persistence";
 
 export interface CollaborationServerOptions {
   crdt: CrdtDocument;
   users: User[];
   now?: () => number;
+  documentStore?: Pick<SqliteDocumentStore, "save">;
 }
 
 export interface CollaborationServer {
@@ -103,6 +106,10 @@ export interface BatchOperationResponseBody {
   rejected: RejectedOperationResult[];
   view: UserView;
   stateVector: string;
+}
+
+export interface DeleteImpactResponseBody extends DeleteImpactResult {
+  ok: true;
 }
 
 export interface ErrorResponseBody {

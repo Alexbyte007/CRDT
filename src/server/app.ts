@@ -28,8 +28,12 @@ export function createCollaborationServer(
   };
 
   const clients = new Set<WebSocketClient>();
+  const persistDocument = () => {
+    options.documentStore?.save(context.crdt);
+  };
   const httpServer = createServer((request, response) => {
     void handleHttpRequest(request, response, context, () => {
+      persistDocument();
       broadcastViews(context, clients);
     });
   });
@@ -44,7 +48,7 @@ export function createCollaborationServer(
     }
 
     wsServer.handleUpgrade(request, socket, head, (webSocket) => {
-      handleWebSocketConnection(webSocket, request, context, clients);
+      handleWebSocketConnection(webSocket, request, context, clients, persistDocument);
     });
   });
 

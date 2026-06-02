@@ -55,6 +55,9 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
       visibility: "public",
       allowedRoles: ["admin", "manager", "member", "guest"],
       editableRoles: ["admin"],
+      contentEditableRoles: ["admin"],
+      childAddableRoles: ["admin"],
+      deletableRoles: ["admin"],
       createdBy: "u-admin"
     }),
     actorId: "u-admin",
@@ -74,6 +77,9 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
       visibility: "public",
       allowedRoles: ["admin", "manager", "member", "guest"],
       editableRoles: ["admin", "manager"],
+      contentEditableRoles: ["admin", "manager"],
+      childAddableRoles: ["admin", "manager"],
+      deletableRoles: ["admin"],
       createdBy: "u-admin"
     }),
     actorId: "u-admin",
@@ -93,6 +99,9 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
       visibility: "department",
       allowedRoles: ["admin", "manager", "member"],
       editableRoles: ["admin", "manager"],
+      contentEditableRoles: ["admin", "manager"],
+      childAddableRoles: ["admin", "manager"],
+      deletableRoles: ["admin"],
       allowedUsers: ["u-dev-manager"],
       createdBy: "u-dev-manager"
     }),
@@ -113,6 +122,9 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
       visibility: "department",
       allowedRoles: ["admin", "manager"],
       editableRoles: ["admin", "manager"],
+      contentEditableRoles: ["admin", "manager"],
+      childAddableRoles: ["admin", "manager"],
+      deletableRoles: ["admin"],
       allowedUsers: ["u-dev-manager"],
       createdBy: "u-dev-manager"
     }),
@@ -133,6 +145,9 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
       visibility: "restricted",
       allowedRoles: ["admin"],
       editableRoles: ["admin"],
+      contentEditableRoles: ["admin"],
+      childAddableRoles: ["admin"],
+      deletableRoles: ["admin"],
       allowedUsers: ["u-finance"],
       createdBy: "u-admin"
     }),
@@ -153,6 +168,9 @@ interface CreateNodeInput {
   visibility: NewTreeNode["acl"]["visibility"];
   allowedRoles: NewTreeNode["acl"]["allowedRoles"];
   editableRoles: NewTreeNode["acl"]["editableRoles"];
+  contentEditableRoles?: NewTreeNode["acl"]["contentEditableRoles"];
+  childAddableRoles?: NewTreeNode["acl"]["childAddableRoles"];
+  deletableRoles?: NewTreeNode["acl"]["deletableRoles"];
   allowedUsers?: string[];
   deniedUsers?: string[];
   createdBy: string;
@@ -174,6 +192,9 @@ function createNode(input: CreateNodeInput): NewTreeNode {
       visibility: input.visibility,
       allowedRoles: input.allowedRoles,
       editableRoles: input.editableRoles,
+      contentEditableRoles: input.contentEditableRoles ?? input.editableRoles,
+      childAddableRoles: input.childAddableRoles ?? input.editableRoles,
+      deletableRoles: input.deletableRoles ?? input.editableRoles,
       allowedUsers: input.allowedUsers ?? [],
       deniedUsers: input.deniedUsers ?? []
     },
