@@ -21,11 +21,6 @@
         "visible": true
       },
       {
-        "name": "managers can view active department nodes",
-        "match": "node.acl.visibility == 'department' and node.attrs.status == 'active' and user.role == 'manager' and includes(node.acl.allowedRoles, user.role)",
-        "visible": true
-      },
-      {
         "name": "private nodes are visible to owners",
         "match": "node.acl.visibility == 'private' and node.attrs.status == 'active' and user.id == node.attrs.ownerId",
         "visible": true
