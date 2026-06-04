@@ -90,7 +90,14 @@ describe("privacy-aware conflict resolution", () => {
     const snapshot = getDocumentSnapshot(left);
     expect(snapshot.nodes["node-dev-plan"]).toBeUndefined();
     expect(snapshot.nodes["node-module-a"]).toBeUndefined();
-    expect(snapshot.nodes["node-root"].children).toEqual(["node-public", "node-finance"]);
+    expect(snapshot.nodes["node-root"].children).toEqual([
+      "node-public",
+      "node-dev-requirements",
+      "node-test-announcement",
+      "node-test-plan",
+      "node-test-bugs",
+      "node-finance"
+    ]);
     expect(snapshot.tombstones["node-dev-plan"]).toBeDefined();
     expect(flattenIds(getView(left, user("u-admin"), { now: 4 }).roots)).not.toContain(
       "node-dev-plan"

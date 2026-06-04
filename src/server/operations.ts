@@ -117,14 +117,19 @@ function preflightViewOperation(
     );
   }
 
-  if (operation.type === "deleteNode" && user.role !== "admin") {
+  if (operation.type === "deleteNode") {
     const impact = analyzeDeleteImpact(context, user, operation.nodeId);
     if (impact.blocksSilentDelete) {
       const nodeList = impact.visibleNodes
         .map((node) => `${node.title} (${node.id})`)
         .join(", ");
+      if (user.role === "admin" && operation.confirmedImpact === true) {
+        return;
+      }
       throw new AccessControlError(
-        `Delete rejected: descendant nodes are visible to broader audiences. Contact an administrator or handle these child projects first: ${nodeList}.`
+        user.role === "admin"
+          ? `Delete rejected: descendant nodes are visible to broader audiences. Confirm the impact before cascading deletion: ${nodeList}.`
+          : `Delete rejected: descendant nodes are visible to broader audiences. Contact an administrator or handle these child projects first: ${nodeList}.`
       );
     }
   }

@@ -152,8 +152,6 @@ export interface ViewNode {
   >;
   children: ViewNode[];
   permissions: ViewPermissions;
-  virtual?: boolean;
-  virtualReason?: "restrictedPath";
 }
 
 export interface ViewPermissions {
@@ -186,6 +184,7 @@ export interface ViewAddNodeOperation {
 export interface ViewDeleteNodeOperation {
   type: "deleteNode";
   nodeId: NodeId;
+  confirmedImpact?: boolean;
 }
 
 export interface ViewDeleteNodeKeepChildrenOperation {

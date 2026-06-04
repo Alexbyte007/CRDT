@@ -18,7 +18,7 @@ export const sampleUsers: SampleUser[] = [
   },
   {
     id: "u-dev-manager",
-    name: "研发经理",
+    name: "研发组长",
     role: "manager",
     department: "dev"
   },
@@ -28,6 +28,20 @@ export const sampleUsers: SampleUser[] = [
     role: "member",
     department: "dev"
   },
+  // ── Test group ──────────────────────────────────────────────────────────────
+  {
+    id: "u-test-manager",
+    name: "测试组长",
+    role: "manager",
+    department: "test"
+  },
+  {
+    id: "u-test-member",
+    name: "测试成员",
+    role: "member",
+    department: "test"
+  },
+  // ── Guest ───────────────────────────────────────────────────────────────────
   {
     id: "u-guest",
     name: "访客",
@@ -43,6 +57,7 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
     now
   });
 
+  // ── Root ────────────────────────────────────────────────────────────────────
   addNode(crdt, {
     type: "addNode",
     parentId: null,
@@ -64,6 +79,7 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
     timestamp: now
   });
 
+  // ── Public node (visible to everyone) ───────────────────────────────────────
   addNode(crdt, {
     type: "addNode",
     parentId: "node-root",
@@ -86,6 +102,7 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
     timestamp: now
   });
 
+  // ── Dev group nodes ──────────────────────────────────────────────────────────
   addNode(crdt, {
     type: "addNode",
     parentId: "node-root",
@@ -136,6 +153,96 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
     type: "addNode",
     parentId: "node-root",
     node: createNode({
+      id: "node-dev-requirements",
+      type: "doc",
+      title: "研发组需求文档",
+      content: "研发组功能需求与接口规格。",
+      department: "dev",
+      ownerId: "u-dev-manager",
+      visibility: "department",
+      allowedRoles: ["admin", "manager", "member"],
+      editableRoles: ["admin", "manager", "member"],
+      contentEditableRoles: ["admin", "manager", "member"],
+      childAddableRoles: ["admin", "manager", "member"],
+      deletableRoles: ["admin", "manager"],
+      createdBy: "u-dev-manager"
+    }),
+    actorId: "u-admin",
+    timestamp: now
+  });
+
+  // ── Test group nodes ─────────────────────────────────────────────────────────
+  addNode(crdt, {
+    type: "addNode",
+    parentId: "node-root",
+    node: createNode({
+      id: "node-test-announcement",
+      type: "doc",
+      title: "测试组公告",
+      content: "测试组最新公告与通知。",
+      department: "test",
+      ownerId: "u-test-manager",
+      visibility: "department",
+      allowedRoles: ["admin", "manager", "member"],
+      editableRoles: ["admin", "manager"],
+      contentEditableRoles: ["admin", "manager"],
+      childAddableRoles: ["admin", "manager"],
+      deletableRoles: ["admin"],
+      createdBy: "u-test-manager"
+    }),
+    actorId: "u-admin",
+    timestamp: now
+  });
+
+  addNode(crdt, {
+    type: "addNode",
+    parentId: "node-root",
+    node: createNode({
+      id: "node-test-plan",
+      type: "doc",
+      title: "测试计划",
+      content: "测试组整体测试策略与排期。",
+      department: "test",
+      ownerId: "u-test-manager",
+      visibility: "department",
+      allowedRoles: ["admin", "manager", "member"],
+      editableRoles: ["admin", "manager", "member"],
+      contentEditableRoles: ["admin", "manager", "member"],
+      childAddableRoles: ["admin", "manager", "member"],
+      deletableRoles: ["admin", "manager"],
+      createdBy: "u-test-manager"
+    }),
+    actorId: "u-admin",
+    timestamp: now
+  });
+
+  addNode(crdt, {
+    type: "addNode",
+    parentId: "node-root",
+    node: createNode({
+      id: "node-test-bugs",
+      type: "doc",
+      title: "缺陷记录",
+      content: "测试组缺陷跟踪与记录。",
+      department: "test",
+      ownerId: "u-test-manager",
+      visibility: "department",
+      allowedRoles: ["admin", "manager", "member"],
+      editableRoles: ["admin", "manager", "member"],
+      contentEditableRoles: ["admin", "manager", "member"],
+      childAddableRoles: ["admin", "manager", "member"],
+      deletableRoles: ["admin", "manager"],
+      createdBy: "u-test-manager"
+    }),
+    actorId: "u-admin",
+    timestamp: now
+  });
+
+  // ── Finance node (restricted, admin-only) ────────────────────────────────────
+  addNode(crdt, {
+    type: "addNode",
+    parentId: "node-root",
+    node: createNode({
       id: "node-finance",
       type: "doc",
       title: "财务预算",
@@ -157,6 +264,8 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
 
   return crdt;
 }
+
+// ── Helper ───────────────────────────────────────────────────────────────────
 
 interface CreateNodeInput {
   id: string;

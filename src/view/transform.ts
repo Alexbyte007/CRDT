@@ -33,10 +33,7 @@ export function getView(
   const roots: ViewNode[] = [];
 
   for (const rootId of snapshot.rootIds) {
-    const viewRoot = projectNode(rootId, user, snapshot.nodes, policyEngine);
-    if (viewRoot) {
-      roots.push(viewRoot);
-    }
+    roots.push(...projectNode(rootId, user, snapshot.nodes, policyEngine, null));
   }
 
   return {
@@ -165,27 +162,31 @@ function projectNode(
   nodeId: NodeId,
   user: User,
   nodes: Record<NodeId, TreeNodeSnapshot>,
-  policyEngine: PolicyEngine
-): ViewNode | null {
+  policyEngine: PolicyEngine,
+  projectedParentId: NodeId | null
+): ViewNode[] {
   const node = nodes[nodeId];
 
   if (!node) {
-    return null;
+    return [];
   }
 
-  const children = projectChildren(node, user, nodes, policyEngine);
+  const canView = policyEngine.canViewNode(user, node);
+  const children = projectChildren(
+    node,
+    user,
+    nodes,
+    policyEngine,
+    canView ? node.id : projectedParentId
+  );
 
-  if (!policyEngine.canViewNode(user, node)) {
-    if (children.length === 0) {
-      return null;
-    }
-
-    return buildRestrictedPathNode(node, children);
+  if (!canView) {
+    return children;
   }
 
   const viewNode: ViewNode = {
     id: node.id,
-    parentId: node.parentId,
+    parentId: projectedParentId,
     type: node.type,
     title: node.title,
     children,
@@ -211,49 +212,23 @@ function projectNode(
     };
   }
 
-  return viewNode;
+  return [viewNode];
 }
 
 function projectChildren(
   node: TreeNodeSnapshot,
   user: User,
   nodes: Record<NodeId, TreeNodeSnapshot>,
-  policyEngine: PolicyEngine
+  policyEngine: PolicyEngine,
+  projectedParentId: NodeId | null
 ): ViewNode[] {
   const children: ViewNode[] = [];
 
   for (const childId of node.children) {
-    const childView = projectNode(childId, user, nodes, policyEngine);
-    if (childView) {
-      children.push(childView);
-    }
+    children.push(...projectNode(childId, user, nodes, policyEngine, projectedParentId));
   }
 
   return children;
-}
-
-function buildRestrictedPathNode(node: TreeNodeSnapshot, children: ViewNode[]): ViewNode {
-  return {
-    id: `virtual-restricted-${node.id}`,
-    parentId: node.parentId,
-    type: "folder",
-    title: "受限路径",
-    children,
-    permissions: buildNoPermissions(),
-    virtual: true,
-    virtualReason: "restrictedPath"
-  };
-}
-
-function buildNoPermissions(): ViewPermissions {
-  return {
-    canAddChild: false,
-    canDelete: false,
-    canRename: false,
-    canEditContent: false,
-    canEditAttrs: false,
-    canEditAcl: false
-  };
 }
 
 function sanitizeNodeAttrs(
