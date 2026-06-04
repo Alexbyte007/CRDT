@@ -365,6 +365,8 @@ export function renderHomePage(): string {
             <option value="u-admin">管理员 / admin / all</option>
             <option value="u-dev-manager">研发经理 / manager / dev</option>
             <option value="u-dev-member">研发成员 / member / dev</option>
+            <option value="u-test-manager">测试组长 / manager / test</option>
+            <option value="u-test-member">测试成员 / member / test</option>
             <option value="u-guest">访客 / guest / external</option>
           </select>
         </div>
@@ -421,10 +423,21 @@ export function renderHomePage(): string {
       </div>
     </div>
 
+    <div id="noticeDialog" class="modal hidden" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="noticeDialogTitle">
+        <h2 id="noticeDialogTitle" class="modal-title">操作提示</h2>
+        <p id="noticeDialogCopy" class="modal-copy"></p>
+        <div class="modal-actions">
+          <button id="noticeDialogOk" type="button">确定</button>
+        </div>
+      </div>
+    </div>
+
     <script>
       const state = {
         token: "",
         user: null,
+        users: [],
         policyVersion: 0,
         view: null,
         stateVector: "",
@@ -460,11 +473,16 @@ export function renderHomePage(): string {
         deleteDialogUsers: document.querySelector("#deleteDialogUsers"),
         deleteDialogCancel: document.querySelector("#deleteDialogCancel"),
         deleteDialogKeepChildren: document.querySelector("#deleteDialogKeepChildren"),
-        deleteDialogForce: document.querySelector("#deleteDialogForce")
+        deleteDialogForce: document.querySelector("#deleteDialogForce"),
+        noticeDialog: document.querySelector("#noticeDialog"),
+        noticeDialogTitle: document.querySelector("#noticeDialogTitle"),
+        noticeDialogCopy: document.querySelector("#noticeDialogCopy"),
+        noticeDialogOk: document.querySelector("#noticeDialogOk")
       };
 
       const offlineStorageKey = "crdt-editor-offline-queue-v1";
       let deleteDialogResolver = null;
+      let noticeDialogResolver = null;
 
       function currentUserId() {
         return state.user ? state.user.id : els.loginUser.value;
@@ -526,6 +544,7 @@ export function renderHomePage(): string {
         state.token = body.token;
         state.user = body.user;
         state.policyVersion = body.policyVersion || 0;
+        await loadAdminUsers();
         clearAllAutoSaveTimers();
         state.editing.drafts = {};
         setLoginStatus("");
@@ -547,6 +566,7 @@ export function renderHomePage(): string {
           }
           state.token = "";
           state.user = null;
+          state.users = [];
           state.view = null;
           state.stateVector = "";
           state.offline.connected = false;
@@ -565,6 +585,16 @@ export function renderHomePage(): string {
         const body = await requestJson("/api/view");
         state.view = body.view || body;
         state.stateVector = body.stateVector || state.stateVector;
+        state.policyVersion = body.policyVersion || state.policyVersion;
+      }
+
+      async function loadAdminUsers() {
+        if (!state.token || !state.user || state.user.role !== "admin") {
+          state.users = [];
+          return;
+        }
+        const body = await requestJson("/api/users");
+        state.users = body.users || [];
         state.policyVersion = body.policyVersion || state.policyVersion;
       }
 
@@ -660,6 +690,16 @@ export function renderHomePage(): string {
               "节点删除权限已更新"
             )
           );
+          const advancedPolicy = renderAdvancedPermissionSelect(
+            "删除冲突高级权限",
+            node.acl.advancedPermissions,
+            (userIds) =>
+              updateNodeAcl(
+                node.id,
+                { advancedPermissions: { deleteConflictResolverUserIds: userIds } },
+                "删除冲突高级权限已更新"
+              )
+          );
           const operationPolicies = [editPolicy, addPolicy, deletePolicy];
           visibilityPolicy.select.addEventListener("change", () =>
             syncOperationAclControls(visibilityPolicy.select, operationPolicies)
@@ -669,6 +709,7 @@ export function renderHomePage(): string {
           policyPanel.appendChild(editPolicy.element);
           policyPanel.appendChild(addPolicy.element);
           policyPanel.appendChild(deletePolicy.element);
+          policyPanel.appendChild(advancedPolicy.element);
           box.appendChild(policyPanel);
         }
 
@@ -707,7 +748,9 @@ export function renderHomePage(): string {
             deleteButton.type = "button";
             deleteButton.className = "danger";
             deleteButton.textContent = "删除";
-            deleteButton.addEventListener("click", () => deleteTreeNode(node.id).catch((error) => setStatus(error.message)));
+            deleteButton.addEventListener("click", () =>
+              deleteTreeNode(node.id).catch((error) => showNoticeDialog("操作失败", error.message))
+            );
             actions.appendChild(deleteButton);
           }
           box.appendChild(actions);
@@ -739,6 +782,48 @@ export function renderHomePage(): string {
         return {
           element: policy,
           select: audience
+        };
+      }
+
+      function renderAdvancedPermissionSelect(label, advancedPermissions, onChange) {
+        const policy = document.createElement("label");
+        policy.className = "node-policy";
+        policy.textContent = label;
+        const select = document.createElement("select");
+        select.dataset.field = "advanced-delete-conflict";
+        const selectedUserIds = new Set(
+          (advancedPermissions && advancedPermissions.deleteConflictResolverUserIds) || []
+        );
+        const selectedUserId = selectedUserIds.size === 1 ? Array.from(selectedUserIds)[0] : "";
+        const assignableUsers = state.users.filter((user) => user.role !== "admin");
+        const options = [
+          '<option value="">无高级授权</option>',
+          ...assignableUsers.map((user) => {
+            const selected = selectedUserId === user.id ? " selected" : "";
+            return (
+              '<option value="' +
+              escapeHtml(user.id) +
+              '"' +
+              selected +
+              ">" +
+              escapeHtml(user.name + " / " + user.role + " / " + user.department) +
+              "</option>"
+            );
+          })
+        ];
+        if (selectedUserIds.size > 1) {
+          options.splice(1, 0, '<option value="__multiple" selected>多个用户已授权</option>');
+        }
+        select.innerHTML = options.join("");
+        select.disabled = assignableUsers.length === 0;
+        select.addEventListener("change", () => {
+          if (select.value === "__multiple") return;
+          onChange(select.value ? [select.value] : []);
+        });
+        policy.appendChild(select);
+        return {
+          element: policy,
+          select
         };
       }
 
@@ -922,8 +1007,8 @@ export function renderHomePage(): string {
           return;
         }
 
-        if (!state.user || state.user.role !== "admin") {
-          setStatus(formatDeleteRejectedMessage(impact));
+        if (!impact.canResolveConflict) {
+          await showNoticeDialog("删除被拒绝", formatDeleteRejectedMessage(impact));
           return;
         }
 
@@ -994,6 +1079,28 @@ export function renderHomePage(): string {
         els.deleteDialog.classList.add("hidden");
         els.deleteDialog.setAttribute("aria-hidden", "true");
         resolve(result);
+      }
+
+      function showNoticeDialog(title, message) {
+        return new Promise((resolve) => {
+          if (noticeDialogResolver) {
+            noticeDialogResolver();
+          }
+          noticeDialogResolver = resolve;
+          els.noticeDialogTitle.textContent = title;
+          els.noticeDialogCopy.textContent = message;
+          els.noticeDialog.classList.remove("hidden");
+          els.noticeDialog.setAttribute("aria-hidden", "false");
+        });
+      }
+
+      function closeNoticeDialog() {
+        if (!noticeDialogResolver) return;
+        const resolve = noticeDialogResolver;
+        noticeDialogResolver = null;
+        els.noticeDialog.classList.add("hidden");
+        els.noticeDialog.setAttribute("aria-hidden", "true");
+        resolve();
       }
 
       function formatDeleteImpactCopy(impact) {
@@ -1150,6 +1257,12 @@ export function renderHomePage(): string {
       els.deleteDialog.addEventListener("click", (event) => {
         if (event.target === els.deleteDialog) {
           closeDeleteImpactDialog(null);
+        }
+      });
+      els.noticeDialogOk.addEventListener("click", () => closeNoticeDialog());
+      els.noticeDialog.addEventListener("click", (event) => {
+        if (event.target === els.noticeDialog) {
+          closeNoticeDialog();
         }
       });
 

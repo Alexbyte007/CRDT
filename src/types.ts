@@ -42,8 +42,13 @@ export interface NodeAcl {
   contentEditableRoles?: UserRole[];
   childAddableRoles?: UserRole[];
   deletableRoles?: UserRole[];
+  advancedPermissions?: NodeAdvancedPermissions;
   allowedUsers: UserId[];
   deniedUsers: UserId[];
+}
+
+export interface NodeAdvancedPermissions {
+  deleteConflictResolverUserIds?: UserId[];
 }
 
 export interface TreeNodeSnapshot {
@@ -148,7 +153,12 @@ export interface ViewNode {
   attrs?: Partial<NodeAttrs>;
   acl?: Pick<
     NodeAcl,
-    "visibility" | "allowedRoles" | "contentEditableRoles" | "childAddableRoles" | "deletableRoles"
+    | "visibility"
+    | "allowedRoles"
+    | "contentEditableRoles"
+    | "childAddableRoles"
+    | "deletableRoles"
+    | "advancedPermissions"
   >;
   children: ViewNode[];
   permissions: ViewPermissions;
@@ -215,7 +225,12 @@ export interface ViewUpdateAclOperation {
   nodeId: NodeId;
   aclPatch: Pick<
     Partial<NodeAcl>,
-    "visibility" | "allowedRoles" | "contentEditableRoles" | "childAddableRoles" | "deletableRoles"
+    | "visibility"
+    | "allowedRoles"
+    | "contentEditableRoles"
+    | "childAddableRoles"
+    | "deletableRoles"
+    | "advancedPermissions"
   >;
 }
 

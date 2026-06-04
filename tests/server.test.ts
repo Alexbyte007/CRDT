@@ -116,6 +116,10 @@ describe("collaboration server", () => {
     expect(html).toContain("谁能改");
     expect(html).toContain("谁能添加子节点");
     expect(html).toContain("谁能删除");
+    expect(html).toContain("删除冲突高级权限");
+    expect(html).toContain("无高级授权");
+    expect(html).toContain("u-test-manager");
+    expect(html).toContain("u-test-member");
     expect(html).toContain("所有人");
     expect(html).toContain("仅管理员");
     expect(html).toContain("管理员和研发经理");
@@ -128,9 +132,12 @@ describe("collaboration server", () => {
     expect(html).toContain("保留子节点");
     expect(html).toContain("强制删除整棵树");
     expect(html).toContain("showDeleteImpactDialog");
+    expect(html).toContain("noticeDialog");
+    expect(html).toContain("showNoticeDialog");
+    expect(html).toContain("确定");
     expect(html).toContain("formatDeleteRejectedMessage");
     expect(html).toContain("删除被拒绝");
-    expect(html).toContain("state.user.role !== \"admin\"");
+    expect(html).toContain("impact.canResolveConflict");
     expect(html).not.toContain("归档父项目");
     expect(html).toContain("localStorage");
     expect(html).toContain("crdt-editor-offline-queue-v1");
@@ -452,7 +459,7 @@ describe("collaboration server", () => {
     expect(getDocumentSnapshot(runningServer!.context.crdt).nodes["node-broader-parent"]).toBeDefined();
   });
 
-  it("allows only admins to preserve children while deleting an impacted parent", async () => {
+  it("requires admin or advanced permission to preserve children while deleting an impacted parent", async () => {
     const { baseUrl } = await startTestServer();
     const admin = await login(baseUrl, "u-admin");
     const manager = await login(baseUrl, "u-dev-manager");
@@ -556,6 +563,128 @@ describe("collaboration server", () => {
     expect(snapshot.nodes["node-preserve-parent"]).toBeUndefined();
     expect(snapshot.nodes["node-preserve-child"]).toBeDefined();
     expect(snapshot.nodes["node-preserve-child"].parentId).toBe("node-root");
+  });
+
+  it("allows node-level advanced users to resolve delete conflicts without becoming admins", async () => {
+    const { baseUrl } = await startTestServer();
+    const admin = await login(baseUrl, "u-admin");
+    const manager = await login(baseUrl, "u-dev-manager");
+    const otherManager = await login(baseUrl, "u-test-manager");
+    const stateVector = await currentStateVector(baseUrl, admin.token);
+
+    const setupResponse = await fetch(`${baseUrl}/api/operations/batch`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(admin.token)
+      },
+      body: JSON.stringify({
+        operations: [
+          {
+            id: "advanced-parent",
+            baseStateVector: stateVector,
+            createdAt: 100,
+            operation: {
+              type: "addNode",
+              parentId: "node-root",
+              nodeId: "node-advanced-parent",
+              title: "高级权限父项目",
+              content: ""
+            }
+          },
+          {
+            id: "advanced-parent-acl",
+            baseStateVector: stateVector,
+            createdAt: 101,
+            operation: {
+              type: "updateAcl",
+              nodeId: "node-advanced-parent",
+              aclPatch: {
+                visibility: "restricted",
+                allowedRoles: ["admin", "manager"],
+                deletableRoles: ["admin", "manager"],
+                advancedPermissions: {
+                  deleteConflictResolverUserIds: ["u-dev-manager"]
+                }
+              }
+            }
+          },
+          {
+            id: "advanced-child",
+            baseStateVector: stateVector,
+            createdAt: 102,
+            operation: {
+              type: "addNode",
+              parentId: "node-advanced-parent",
+              nodeId: "node-advanced-child",
+              title: "高级权限保留子项目",
+              content: ""
+            }
+          },
+          {
+            id: "advanced-child-acl",
+            baseStateVector: stateVector,
+            createdAt: 103,
+            operation: {
+              type: "updateAcl",
+              nodeId: "node-advanced-child",
+              aclPatch: {
+                visibility: "restricted",
+                allowedRoles: ["admin", "manager", "member"]
+              }
+            }
+          }
+        ]
+      })
+    });
+    expect(setupResponse.status).toBe(200);
+
+    const impactResponse = await fetch(`${baseUrl}/api/delete-impact?nodeId=node-advanced-parent`, {
+      headers: authHeaders(manager.token)
+    });
+    const impact = (await impactResponse.json()) as {
+      ok: true;
+      blocksSilentDelete: boolean;
+      canResolveConflict: boolean;
+    };
+    expect(impactResponse.status).toBe(200);
+    expect(impact.blocksSilentDelete).toBe(true);
+    expect(impact.canResolveConflict).toBe(true);
+
+    const forbidden = await fetch(`${baseUrl}/api/operations`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(otherManager.token)
+      },
+      body: JSON.stringify({
+        operation: {
+          type: "deleteNodeKeepChildren",
+          nodeId: "node-advanced-parent"
+        }
+      })
+    });
+    expect(forbidden.status).toBe(400);
+
+    const allowed = await fetch(`${baseUrl}/api/operations`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(manager.token)
+      },
+      body: JSON.stringify({
+        operation: {
+          type: "deleteNodeKeepChildren",
+          nodeId: "node-advanced-parent"
+        }
+      })
+    });
+
+    expect(allowed.status).toBe(200);
+    const snapshot = getDocumentSnapshot(runningServer!.context.crdt);
+    expect(snapshot.nodes["node-advanced-parent"]).toBeUndefined();
+    expect(snapshot.nodes["node-advanced-child"]).toBeDefined();
+    expect(snapshot.nodes["node-advanced-child"].parentId).toBe("node-root");
   });
 
   it("accepts authorized HTTP operations and returns the updated user view", async () => {

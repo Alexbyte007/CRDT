@@ -274,7 +274,10 @@ describe("privacy view transform", () => {
       allowedRoles: ["admin", "manager", "member", "guest"],
       contentEditableRoles: ["admin", "manager"],
       childAddableRoles: ["admin", "manager"],
-      deletableRoles: ["admin"]
+      deletableRoles: ["admin"],
+      advancedPermissions: {
+        deleteConflictResolverUserIds: []
+      }
     });
     expect(adminNode?.permissions.canEditAcl).toBe(true);
     expect(memberNode?.acl).toBeUndefined();
