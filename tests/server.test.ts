@@ -8,9 +8,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { createCollaborationServer } from "../src/server/app";
 import type { CollaborationServer } from "../src/server/types";
-import { createSampleDocument, sampleUsers } from "../src/fixtures/sample";
+import { createSampleDocument, sampleUserAccountSeeds, sampleUsers } from "../src/fixtures/sample";
 import { getDocumentSnapshot } from "../src/crdt/snapshot";
 import type { ServerMessage, UserView, ViewOperation } from "../src";
+import { hashPassword } from "../src/server/auth";
 
 let runningServer: CollaborationServer | undefined;
 const execFileAsync = promisify(execFile);
@@ -1159,6 +1160,109 @@ describe("collaboration server", () => {
     expect(staleBody.error.name).toBe("AuthenticationError");
   });
 
+  it("registers a new guest account and logs in with password", async () => {
+    const { baseUrl } = await startTestServer();
+
+    const registerResponse = await fetch(`${baseUrl}/api/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        username: "newuser",
+        displayName: "新用户",
+        password: "pass123",
+        confirmPassword: "pass123"
+      })
+    });
+
+    const registerBody = await registerResponse.json();
+
+    expect(registerResponse.status).toBe(200);
+    expect(registerBody.user.role).toBe("guest");
+    expect(registerBody.user.department).toBe("external");
+    expect(registerBody.token.length).toBeGreaterThan(0);
+
+    const loginResponse = await fetch(`${baseUrl}/api/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        username: "newuser",
+        password: "pass123"
+      })
+    });
+
+    expect(loginResponse.status).toBe(200);
+  });
+
+  it("rejects duplicate usernames during registration", async () => {
+    const { baseUrl } = await startTestServer();
+
+    const response = await fetch(`${baseUrl}/api/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        username: "admin",
+        displayName: "重复管理员",
+        password: "pass123",
+        confirmPassword: "pass123"
+      })
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects registration when password confirmation does not match", async () => {
+    const { baseUrl } = await startTestServer();
+
+    const response = await fetch(`${baseUrl}/api/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        username: "mismatch",
+        displayName: "密码不一致",
+        password: "pass123",
+        confirmPassword: "pass456"
+      })
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects login with wrong password", async () => {
+    const { baseUrl } = await startTestServer();
+
+    const response = await fetch(`${baseUrl}/api/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        username: "admin",
+        password: "wrong-password"
+      })
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("does not store password in plain text", async () => {
+    const { baseUrl } = await startTestServer();
+
+    await fetch(`${baseUrl}/api/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        username: "hashed-user",
+        displayName: "哈希用户",
+        password: "secret123",
+        confirmPassword: "secret123"
+      })
+    });
+
+    const account = runningServer!.context.accounts.get("hashed-user");
+
+    expect(account).toBeDefined();
+    expect(account!.passwordHash).not.toBe("secret123");
+    expect(account!.passwordHash).toContain("scrypt$");
+  });
+  
   it("pushes initial views and broadcasts updates over WebSocket", async () => {
     const { baseUrl, port } = await startTestServer();
     const admin = await login(baseUrl, "u-admin");
@@ -1294,17 +1398,31 @@ describe("collaboration server", () => {
   });
 });
 
+const credentialsByUserId: Record<string, { username: string; password: string }> = {
+  "u-admin": { username: "admin", password: "admin123" },
+  "u-dev-manager": { username: "manager", password: "manager123" },
+  "u-dev-member": { username: "member", password: "member123" },
+  "u-guest": { username: "guest", password: "guest123" }
+};
+
 async function login(baseUrl: string, userId: string): Promise<{ token: string }> {
+  const credentials = credentialsByUserId[userId];
+
+  expect(credentials).toBeDefined();
+
   const response = await fetch(`${baseUrl}/api/login`, {
     method: "POST",
     headers: {
       "content-type": "application/json"
     },
-    body: JSON.stringify({ userId })
+    body: JSON.stringify(credentials)
   });
+
   const body = (await response.json()) as { ok: true; token: string };
+
   expect(response.status).toBe(200);
   expect(body.token.length).toBeGreaterThan(0);
+
   return { token: body.token };
 }
 
@@ -1364,10 +1482,23 @@ function authHeaders(token: string): Record<string, string> {
   };
 }
 
+function createTestUserAccounts() {
+  return sampleUserAccountSeeds.map((seed) => ({
+    id: seed.id,
+    username: seed.username,
+    name: seed.name,
+    role: seed.role,
+    department: seed.department,
+    passwordHash: hashPassword(seed.password),
+    createdAt: 42
+  }));
+}
+
 async function startTestServer(): Promise<{ baseUrl: string; port: number }> {
   runningServer = createCollaborationServer({
     crdt: createSampleDocument(),
     users: sampleUsers,
+    userAccounts: createTestUserAccounts(),
     now: () => 42
   });
 

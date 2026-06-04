@@ -17,9 +17,12 @@ import {
 export function createCollaborationServer(
   options: CollaborationServerOptions
 ): CollaborationServer {
+  const userAccounts = options.userAccounts ?? [];
   const context: CollaborationContext = {
     crdt: options.crdt,
     users: new Map(options.users.map((user) => [user.id, user])),
+    accounts: new Map(userAccounts.map((account) => [account.username.toLowerCase(), account])),
+    accountStore: options.documentStore,
     now: options.now ?? Date.now,
     processedOperationIds: new Set(),
     sessions: new Map(),

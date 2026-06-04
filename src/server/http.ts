@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { encodeStateVector } from "../crdt/state-vector";
 import type { User, UserId } from "../types";
 import { getView } from "../view/transform";
@@ -7,14 +8,19 @@ import {
   getBearerToken,
   requireAdmin,
   revokeSession,
-  rotatePolicyVersion
+  rotatePolicyVersion,
+  AuthenticationError,
+  hashPassword,
+  verifyPassword
 } from "./auth";
 import type {
   BatchOperationRequestBody,
   CollaborationContext,
   ErrorResponseBody,
   LoginRequestBody,
-  OperationRequestBody
+  OperationRequestBody,
+  RegisterRequestBody,
+  UserAccount
 } from "./types";
 import { renderHomePage } from "./page";
 import { analyzeDeleteImpact } from "./delete-impact";
@@ -41,10 +47,79 @@ export async function handleHttpRequest(
 
     if (request.method === "POST" && url.pathname === "/api/login") {
       const body = await readJsonBody<LoginRequestBody>(request);
-      if (!body.userId) {
-        throw new Error("Login userId is required.");
+      const username = normalizeUsername(body.username);
+      const password = body.password ?? "";
+
+      if (!username || !password) {
+        throw new AuthenticationError("Username and password are required.");
       }
-      const session = createSession(context, body.userId);
+
+      const account = context.accounts.get(username);
+
+      if (!account || !verifyPassword(password, account.passwordHash)) {
+        throw new AuthenticationError("Invalid username or password.");
+      }
+
+      const session = createSession(context, account.id);
+      sendJson(response, 200, {
+        ok: true,
+        token: session.token,
+        user: publicUser(requireUser(context, session.userId)),
+        policyVersion: context.policyVersion
+      });
+      return;
+    }
+
+        if (request.method === "POST" && url.pathname === "/api/register") {
+      const body = await readJsonBody<RegisterRequestBody>(request);
+
+      const username = normalizeUsername(body.username);
+      const displayName = typeof body.displayName === "string" ? body.displayName.trim() : "";
+      const password = body.password ?? "";
+      const confirmPassword = body.confirmPassword ?? "";
+
+      if (!username) {
+        throw new Error("Username is required.");
+      }
+
+      if (!displayName) {
+        throw new Error("Display name is required.");
+      }
+
+      if (!password) {
+        throw new Error("Password is required.");
+      }
+
+      if (password !== confirmPassword) {
+        throw new Error("Password confirmation does not match.");
+      }
+
+      if (context.accounts.has(username)) {
+        throw new Error("Username already exists.");
+      }
+
+      const account: UserAccount = {
+        id: `u-${randomUUID()}`,
+        username,
+        name: displayName,
+        role: "guest",
+        department: "external",
+        passwordHash: hashPassword(password),
+        createdAt: context.now()
+      };
+
+      context.accounts.set(username, account);
+      context.users.set(account.id, {
+        id: account.id,
+        name: account.name,
+        role: account.role,
+        department: account.department
+      });
+
+      context.accountStore?.saveUserAccount(account);
+
+      const session = createSession(context, account.id);
+
       sendJson(response, 200, {
         ok: true,
         token: session.token,
@@ -272,4 +347,8 @@ function readJsonBody<T>(request: import("node:http").IncomingMessage): Promise<
       }
     });
   });
+}
+
+function normalizeUsername(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
 }

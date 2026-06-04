@@ -16,8 +16,9 @@ import type { SqliteDocumentStore } from "./persistence";
 export interface CollaborationServerOptions {
   crdt: CrdtDocument;
   users: User[];
+  userAccounts?: UserAccount[];
   now?: () => number;
-  documentStore?: Pick<SqliteDocumentStore, "save">;
+  documentStore?: Pick<SqliteDocumentStore, "save" | "saveUserAccount">;
 }
 
 export interface CollaborationServer {
@@ -29,11 +30,13 @@ export interface CollaborationServer {
 export interface CollaborationContext {
   crdt: CrdtDocument;
   users: Map<UserId, User>;
+  accounts: Map<string, UserAccount>;
   now: () => number;
   processedOperationIds: Set<string>;
   sessions: Map<string, SessionInfo>;
   policyVersion: number;
   policyEngine: PolicyEngine;
+  accountStore?: Pick<SqliteDocumentStore, "saveUserAccount">;
 }
 
 export interface SessionInfo {
@@ -44,7 +47,8 @@ export interface SessionInfo {
 }
 
 export interface LoginRequestBody {
-  userId?: UserId;
+  username?: string;
+  password?: string;
 }
 
 export interface LoginResponseBody {
@@ -118,6 +122,23 @@ export interface ErrorResponseBody {
     name: string;
     message: string;
   };
+}
+
+export interface RegisterRequestBody {
+  username?: string;
+  displayName?: string;
+  password?: string;
+  confirmPassword?: string;
+}
+
+export interface UserAccount {
+  id: UserId;
+  username: string;
+  name: string;
+  role: UserRole;
+  department: string;
+  passwordHash: string;
+  createdAt: number;
 }
 
 export type ClientMessage =
