@@ -1,4 +1,9 @@
 import { AddressInfo } from "node:net";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { createCollaborationServer } from "../src/server/app";
@@ -8,6 +13,7 @@ import { getDocumentSnapshot } from "../src/crdt/snapshot";
 import type { ServerMessage, UserView, ViewOperation } from "../src";
 
 let runningServer: CollaborationServer | undefined;
+const execFileAsync = promisify(execFile);
 
 afterEach(async () => {
   if (!runningServer) {
@@ -116,6 +122,12 @@ describe("collaboration server", () => {
     expect(html).toContain("谁能改");
     expect(html).toContain("谁能添加子节点");
     expect(html).toContain("谁能删除");
+    expect(html).toContain("删除冲突高级权限");
+    expect(html).toContain("multi-select");
+    expect(html).toContain("multi-select-check");
+    expect(html).toContain("点击下拉项可多选，✓ 表示已授权");
+    expect(html).toContain("node.children && node.children.length > 0");
+    expect(html).toContain("无高级授权");
     expect(html).toContain("所有人");
     expect(html).toContain("仅管理员");
     expect(html).toContain("管理员和研发经理");
@@ -128,9 +140,12 @@ describe("collaboration server", () => {
     expect(html).toContain("保留子节点");
     expect(html).toContain("强制删除整棵树");
     expect(html).toContain("showDeleteImpactDialog");
+    expect(html).toContain("noticeDialog");
+    expect(html).toContain("showNoticeDialog");
+    expect(html).toContain("确定");
     expect(html).toContain("formatDeleteRejectedMessage");
     expect(html).toContain("删除被拒绝");
-    expect(html).toContain("state.user.role !== \"admin\"");
+    expect(html).toContain("impact.canResolveConflict");
     expect(html).not.toContain("归档父项目");
     expect(html).toContain("localStorage");
     expect(html).toContain("crdt-editor-offline-queue-v1");
@@ -141,6 +156,24 @@ describe("collaboration server", () => {
     expect(html).not.toContain("<button id=\"updateContent\"");
     expect(html).not.toContain("<button id=\"addChild\"");
     expect(html).not.toContain("<button id=\"deleteNode\"");
+  });
+
+  it("serves syntactically valid frontend script", async () => {
+    const { baseUrl } = await startTestServer();
+
+    const response = await fetch(`${baseUrl}/`);
+    const html = await response.text();
+    const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+    const tempDir = await mkdtemp(join(tmpdir(), "crdt-page-"));
+    const scriptPath = join(tempDir, "page.js");
+
+    expect(script).toBeDefined();
+    await writeFile(scriptPath, script ?? "");
+    try {
+      await execFileAsync(process.execPath, ["--check", scriptPath]);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("analyzes delete impact and blocks silent deletion when descendants are visible to others", async () => {
@@ -232,14 +265,12 @@ describe("collaboration server", () => {
       {
         id: "node-impact-public-child",
         title: "其他用户可见子节点",
-        visibleTo: ["u-dev-manager", "u-dev-member", "u-test-manager", "u-test-member", "u-guest"]
+        visibleTo: ["u-dev-manager", "u-dev-member", "u-guest"]
       }
     ]);
     expect(impact.affectedUsers.map((user) => user.id)).toEqual([
       "u-dev-manager",
       "u-dev-member",
-      "u-test-manager",
-      "u-test-member",
       "u-guest"
     ]);
 
@@ -260,8 +291,6 @@ describe("collaboration server", () => {
     expect(leafImpact.deletedRootVisibleTo).toEqual([
       "u-dev-manager",
       "u-dev-member",
-      "u-test-manager",
-      "u-test-member",
       "u-guest"
     ]);
     expect(leafImpact.visibleNodes).toEqual([]);
@@ -314,13 +343,14 @@ describe("collaboration server", () => {
     expect(snapshot.tombstones["node-impact-public-child"]).toBeDefined();
   });
 
-  it("allows direct delete when descendants do not expose broader visibility", async () => {
+  it("allows direct delete for leaf nodes but requires conflict handling for non-leaf nodes", async () => {
     const { baseUrl } = await startTestServer();
     const admin = await login(baseUrl, "u-admin");
     const manager = await login(baseUrl, "u-dev-manager");
     await grantDelete(baseUrl, admin.token, "node-dev-plan", ["admin", "manager"]);
+    await grantDelete(baseUrl, admin.token, "node-module-a", ["admin", "manager"]);
 
-    const response = await fetch(`${baseUrl}/api/operations`, {
+    const nonLeafResponse = await fetch(`${baseUrl}/api/operations`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -334,11 +364,28 @@ describe("collaboration server", () => {
       })
     });
 
-    expect(response.status).toBe(200);
+    expect(nonLeafResponse.status).toBe(400);
+    expect(getDocumentSnapshot(runningServer!.context.crdt).nodes["node-dev-plan"]).toBeDefined();
+
+    const leafResponse = await fetch(`${baseUrl}/api/operations`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(manager.token)
+      },
+      body: JSON.stringify({
+        operation: {
+          type: "deleteNode",
+          nodeId: "node-module-a"
+        }
+      })
+    });
+
+    expect(leafResponse.status).toBe(200);
     const snapshot = getDocumentSnapshot(runningServer!.context.crdt);
-    expect(snapshot.nodes["node-dev-plan"]).toBeUndefined();
     expect(snapshot.nodes["node-module-a"]).toBeUndefined();
-    expect(snapshot.tombstones["node-dev-plan"]).toBeDefined();
+    expect(snapshot.nodes["node-dev-plan"]).toBeDefined();
+    expect(snapshot.tombstones["node-module-a"]).toBeDefined();
   });
 
   it("rejects non-admin subtree delete when a child is visible to broader audiences", async () => {
@@ -426,10 +473,13 @@ describe("collaboration server", () => {
       {
         id: "node-broader-child",
         title: "研发成员仍可见子项目",
-        visibleTo: ["u-dev-member", "u-test-member"]
+        visibleTo: ["u-admin", "u-dev-member"]
       }
     ]);
-    expect(impact.affectedUsers.map((user) => user.id)).toEqual(["u-dev-member", "u-test-member"]);
+    expect(impact.affectedUsers.map((user) => user.id)).toEqual([
+      "u-admin",
+      "u-dev-member"
+    ]);
 
     const response = await fetch(`${baseUrl}/api/operations`, {
       method: "POST",
@@ -452,7 +502,7 @@ describe("collaboration server", () => {
     expect(getDocumentSnapshot(runningServer!.context.crdt).nodes["node-broader-parent"]).toBeDefined();
   });
 
-  it("allows only admins to preserve children while deleting an impacted parent", async () => {
+  it("requires admin or advanced permission to preserve children while deleting an impacted parent", async () => {
     const { baseUrl } = await startTestServer();
     const admin = await login(baseUrl, "u-admin");
     const manager = await login(baseUrl, "u-dev-manager");
@@ -556,6 +606,241 @@ describe("collaboration server", () => {
     expect(snapshot.nodes["node-preserve-parent"]).toBeUndefined();
     expect(snapshot.nodes["node-preserve-child"]).toBeDefined();
     expect(snapshot.nodes["node-preserve-child"].parentId).toBe("node-root");
+  });
+
+  it("allows node-level advanced users to resolve delete conflicts without becoming admins", async () => {
+    const { baseUrl } = await startTestServer();
+    const admin = await login(baseUrl, "u-admin");
+    const manager = await login(baseUrl, "u-dev-manager");
+    const devMember = await login(baseUrl, "u-dev-member");
+    const stateVector = await currentStateVector(baseUrl, admin.token);
+
+    const setupResponse = await fetch(`${baseUrl}/api/operations/batch`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(admin.token)
+      },
+      body: JSON.stringify({
+        operations: [
+          {
+            id: "advanced-parent",
+            baseStateVector: stateVector,
+            createdAt: 100,
+            operation: {
+              type: "addNode",
+              parentId: "node-root",
+              nodeId: "node-advanced-parent",
+              title: "高级权限父项目",
+              content: ""
+            }
+          },
+          {
+            id: "advanced-parent-acl",
+            baseStateVector: stateVector,
+            createdAt: 101,
+            operation: {
+              type: "updateAcl",
+              nodeId: "node-advanced-parent",
+              aclPatch: {
+                visibility: "restricted",
+                allowedRoles: ["admin", "manager"],
+                deletableRoles: ["admin", "manager"],
+                advancedPermissions: {
+                  deleteConflictResolverUserIds: ["u-dev-manager"]
+                }
+              }
+            }
+          },
+          {
+            id: "advanced-child",
+            baseStateVector: stateVector,
+            createdAt: 102,
+            operation: {
+              type: "addNode",
+              parentId: "node-advanced-parent",
+              nodeId: "node-advanced-child",
+              title: "高级权限保留子项目",
+              content: ""
+            }
+          },
+          {
+            id: "advanced-child-acl",
+            baseStateVector: stateVector,
+            createdAt: 103,
+            operation: {
+              type: "updateAcl",
+              nodeId: "node-advanced-child",
+              aclPatch: {
+                visibility: "restricted",
+                allowedRoles: ["admin", "manager", "member"]
+              }
+            }
+          }
+        ]
+      })
+    });
+    expect(setupResponse.status).toBe(200);
+
+    const impactResponse = await fetch(`${baseUrl}/api/delete-impact?nodeId=node-advanced-parent`, {
+      headers: authHeaders(manager.token)
+    });
+    const impact = (await impactResponse.json()) as {
+      ok: true;
+      blocksSilentDelete: boolean;
+      canResolveConflict: boolean;
+    };
+    expect(impactResponse.status).toBe(200);
+    expect(impact.blocksSilentDelete).toBe(true);
+    expect(impact.canResolveConflict).toBe(true);
+
+    const forbidden = await fetch(`${baseUrl}/api/operations`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(devMember.token)
+      },
+      body: JSON.stringify({
+        operation: {
+          type: "deleteNodeKeepChildren",
+          nodeId: "node-advanced-parent"
+        }
+      })
+    });
+    expect(forbidden.status).toBe(400);
+
+    const allowed = await fetch(`${baseUrl}/api/operations`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(manager.token)
+      },
+      body: JSON.stringify({
+        operation: {
+          type: "deleteNodeKeepChildren",
+          nodeId: "node-advanced-parent"
+        }
+      })
+    });
+
+    expect(allowed.status).toBe(200);
+    const snapshot = getDocumentSnapshot(runningServer!.context.crdt);
+    expect(snapshot.nodes["node-advanced-parent"]).toBeUndefined();
+    expect(snapshot.nodes["node-advanced-child"]).toBeDefined();
+    expect(snapshot.nodes["node-advanced-child"].parentId).toBe("node-root");
+  });
+
+  it("blocks public parent deletion when descendants are visible to a different audience", async () => {
+    const { baseUrl } = await startTestServer();
+    const admin = await login(baseUrl, "u-admin");
+    const guest = await login(baseUrl, "u-guest");
+    const stateVector = await currentStateVector(baseUrl, admin.token);
+
+    const setupResponse = await fetch(`${baseUrl}/api/operations/batch`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(admin.token)
+      },
+      body: JSON.stringify({
+        operations: [
+          {
+            id: "public-parent",
+            baseStateVector: stateVector,
+            createdAt: 100,
+            operation: {
+              type: "addNode",
+              parentId: "node-root",
+              nodeId: "node-public-parent-with-private-child",
+              title: "公开父项目",
+              content: ""
+            }
+          },
+          {
+            id: "public-parent-acl",
+            baseStateVector: stateVector,
+            createdAt: 101,
+            operation: {
+              type: "updateAcl",
+              nodeId: "node-public-parent-with-private-child",
+              aclPatch: {
+                visibility: "public",
+                allowedRoles: ["admin", "manager", "member", "guest"],
+                deletableRoles: ["admin", "guest"],
+                advancedPermissions: {
+                  deleteConflictResolverUserIds: ["u-guest"]
+                }
+              }
+            }
+          },
+          {
+            id: "team-child",
+            baseStateVector: stateVector,
+            createdAt: 102,
+            operation: {
+              type: "addNode",
+              parentId: "node-public-parent-with-private-child",
+              nodeId: "node-dev-team-child-under-public",
+              title: "研发团队子项目",
+              content: ""
+            }
+          },
+          {
+            id: "team-child-acl",
+            baseStateVector: stateVector,
+            createdAt: 103,
+            operation: {
+              type: "updateAcl",
+              nodeId: "node-dev-team-child-under-public",
+              aclPatch: {
+                visibility: "restricted",
+                allowedRoles: ["admin", "manager", "member"]
+              }
+            }
+          }
+        ]
+      })
+    });
+    expect(setupResponse.status).toBe(200);
+
+    const impactResponse = await fetch(
+      `${baseUrl}/api/delete-impact?nodeId=node-public-parent-with-private-child`,
+      { headers: authHeaders(guest.token) }
+    );
+    const impact = (await impactResponse.json()) as {
+      ok: true;
+      blocksSilentDelete: boolean;
+      canResolveConflict: boolean;
+      visibleNodes: Array<{ id: string; visibleTo: string[] }>;
+    };
+
+    expect(impactResponse.status).toBe(200);
+    expect(impact.blocksSilentDelete).toBe(true);
+    expect(impact.canResolveConflict).toBe(true);
+    expect(impact.visibleNodes).toEqual([
+      {
+        id: "node-dev-team-child-under-public",
+        title: "研发团队子项目",
+        visibleTo: ["u-admin", "u-dev-manager", "u-dev-member"]
+      }
+    ]);
+
+    const unconfirmed = await fetch(`${baseUrl}/api/operations`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(guest.token)
+      },
+      body: JSON.stringify({
+        operation: {
+          type: "deleteNode",
+          nodeId: "node-public-parent-with-private-child"
+        }
+      })
+    });
+
+    expect(unconfirmed.status).toBe(400);
+    expect(getDocumentSnapshot(runningServer!.context.crdt).nodes["node-public-parent-with-private-child"]).toBeDefined();
   });
 
   it("accepts authorized HTTP operations and returns the updated user view", async () => {
