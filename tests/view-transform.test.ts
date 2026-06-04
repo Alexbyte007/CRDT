@@ -408,7 +408,7 @@ describe("privacy view transform", () => {
     ).toThrow(AccessControlError);
   });
 
-  it("uses restricted-path virtual nodes for visible descendants under invisible parents", () => {
+  it("flattens visible descendants under invisible parents to the nearest visible ancestor", () => {
     const crdt = createSampleDocument();
 
     applyFullDocOperation(crdt, {
@@ -457,6 +457,8 @@ describe("privacy view transform", () => {
           visibility: "public",
           allowedRoles: ["admin", "manager", "member", "guest"],
           editableRoles: ["admin"],
+          contentEditableRoles: ["admin", "manager", "member", "guest"],
+          childAddableRoles: ["admin", "manager", "member", "guest"],
           allowedUsers: [],
           deniedUsers: []
         },
@@ -467,42 +469,58 @@ describe("privacy view transform", () => {
     const adminView = getView(crdt, user("u-admin"), { now: 50 });
     const guestView = getView(crdt, user("u-guest"), { now: 50 });
     const privateFolderForAdmin = findViewNode(adminView.roots, "node-private-folder");
-    const restrictedPathForGuest = findVirtualNode(guestView.roots, "restrictedPath");
     const publicChildForGuest = findViewNode(guestView.roots, "node-public-child");
 
     expect(privateFolderForAdmin).toMatchObject({
       id: "node-private-folder",
       title: "管理员私有目录"
     });
-    expect(privateFolderForAdmin?.virtual).not.toBe(true);
-    expect(findViewNode(adminView.roots, "node-public-child")).toBeDefined();
+    expect(findViewNode(adminView.roots, "node-public-child")).toMatchObject({
+      id: "node-public-child",
+      parentId: "node-private-folder"
+    });
 
     expect(findViewNode(guestView.roots, "node-private-folder")).toBeUndefined();
     expect(JSON.stringify(guestView)).not.toContain("管理员私有目录");
     expect(JSON.stringify(guestView)).not.toContain("普通用户不应看到这个目录内容");
     expect(JSON.stringify(guestView)).not.toContain("finance");
-
-    expect(restrictedPathForGuest).toMatchObject({
-      id: "virtual-restricted-node-private-folder",
-      title: "受限路径",
-      virtual: true,
-      virtualReason: "restrictedPath",
-      permissions: {
-        canAddChild: false,
-        canDelete: false,
-        canRename: false,
-        canEditContent: false,
-        canEditAttrs: false,
-        canEditAcl: false
-      }
-    });
-    expect(restrictedPathForGuest?.content).toBeUndefined();
-    expect(restrictedPathForGuest?.attrs).toBeUndefined();
+    expect(JSON.stringify(guestView)).not.toContain("受限路径");
+    expect(JSON.stringify(guestView)).not.toContain("restrictedPath");
     expect(publicChildForGuest).toMatchObject({
       id: "node-public-child",
+      parentId: "node-root",
       title: "公开子文档",
       content: "虽然父目录受限，但这个子文档公开可见。"
     });
+
+    const updateOperation = putOperation(
+      crdt,
+      user("u-guest"),
+      {
+        type: "updateContent",
+        nodeId: "node-public-child",
+        content: "普通用户在折叠视图中修改公开子文档。"
+      },
+      { now: 51 }
+    );
+    applyFullDocOperation(crdt, updateOperation);
+    expect(getNodeSnapshot(crdt, "node-public-child")?.content).toBe(
+      "普通用户在折叠视图中修改公开子文档。"
+    );
+
+    const addOperation = putOperation(
+      crdt,
+      user("u-guest"),
+      {
+        type: "addNode",
+        parentId: "node-public-child",
+        nodeId: "node-public-grandchild",
+        title: "公开孙节点"
+      },
+      { now: 52 }
+    );
+    applyFullDocOperation(crdt, addOperation);
+    expect(getNodeSnapshot(crdt, "node-public-grandchild")?.parentId).toBe("node-public-child");
   });
 });
 
@@ -524,22 +542,6 @@ function findViewNode(nodes: ViewNode[], nodeId: string): ViewNode | undefined {
       return node;
     }
     const child = findViewNode(node.children, nodeId);
-    if (child) {
-      return child;
-    }
-  }
-  return undefined;
-}
-
-function findVirtualNode(
-  nodes: ViewNode[],
-  reason: NonNullable<ViewNode["virtualReason"]>
-): ViewNode | undefined {
-  for (const node of nodes) {
-    if (node.virtual && node.virtualReason === reason) {
-      return node;
-    }
-    const child = findVirtualNode(node.children, reason);
     if (child) {
       return child;
     }

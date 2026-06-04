@@ -152,8 +152,6 @@ export interface ViewNode {
   >;
   children: ViewNode[];
   permissions: ViewPermissions;
-  virtual?: boolean;
-  virtualReason?: "restrictedPath";
 }
 
 export interface ViewPermissions {
