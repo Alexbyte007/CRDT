@@ -1,38 +1,41 @@
-import type { NewTreeNode, UserId, UserRole } from "../types";
+import type { NewTreeNode, User } from "../types";
 import { addNode } from "../crdt/operations";
 import { type CrdtDocument, createCrdtDocument } from "../crdt/document";
 
-export interface SampleUser {
-  id: UserId;
-  name: string;
-  role: UserRole;
-  department: string;
-}
+const SAMPLE_USER_CREATED_AT = 1_700_000_000_000;
 
-export const sampleUsers: SampleUser[] = [
+export const sampleUsers: User[] = [
   {
     id: "u-admin",
+    username: "u-admin",
     name: "管理员",
     role: "admin",
-    department: "all"
+    department: "all",
+    createdAt: SAMPLE_USER_CREATED_AT
   },
   {
     id: "u-dev-manager",
+    username: "u-dev-manager",
     name: "研发组长",
     role: "manager",
-    department: "dev"
+    department: "dev",
+    createdAt: SAMPLE_USER_CREATED_AT + 1
   },
   {
     id: "u-dev-member",
+    username: "u-dev-member",
     name: "研发成员",
     role: "member",
-    department: "dev"
+    department: "dev",
+    createdAt: SAMPLE_USER_CREATED_AT + 2
   },
   {
     id: "u-guest",
+    username: "u-guest",
     name: "访客",
     role: "guest",
-    department: "external"
+    department: "external",
+    createdAt: SAMPLE_USER_CREATED_AT + 3
   }
 ];
 

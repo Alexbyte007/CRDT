@@ -56,9 +56,11 @@ export interface LoginResponseBody {
 
 export interface PublicUser {
   id: UserId;
+  username: string;
   name: string;
   role: UserRole;
   department: string;
+  createdAt: number;
 }
 
 export interface UpdateUserRequestBody {
@@ -138,6 +140,7 @@ export type ServerMessage =
       type: "view";
       view: UserView;
       stateVector: string;
+      policyVersion: number;
     }
   | {
       type: "operationApplied";
@@ -145,6 +148,7 @@ export type ServerMessage =
       operationId?: string;
       deduplicated?: boolean;
       stateVector: string;
+      policyVersion: number;
     }
   | {
       type: "error";

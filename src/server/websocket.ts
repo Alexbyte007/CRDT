@@ -40,7 +40,8 @@ export function handleWebSocketConnection(
         now: context.now(),
         policyEngine: context.policyEngine
       }),
-      stateVector: encodeStateVector(context.crdt)
+      stateVector: encodeStateVector(context.crdt),
+      policyVersion: context.policyVersion
     });
   } catch (error) {
     sendServerMessage(socket, errorMessage(error));
@@ -78,7 +79,8 @@ export function broadcastViews(
         now: context.now(),
         policyEngine: context.policyEngine
       }),
-      stateVector: encodeStateVector(context.crdt)
+      stateVector: encodeStateVector(context.crdt),
+      policyVersion: context.policyVersion
     });
   }
 }
@@ -114,7 +116,8 @@ function handleClientMessage(
       view: result.view,
       operationId: result.operationId,
       deduplicated: result.deduplicated,
-      stateVector: result.stateVector
+      stateVector: result.stateVector,
+      policyVersion: context.policyVersion
     });
     if (!result.deduplicated) {
       onDocumentChanged();

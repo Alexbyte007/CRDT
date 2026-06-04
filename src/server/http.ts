@@ -2,6 +2,7 @@ import { encodeStateVector } from "../crdt/state-vector";
 import type { User, UserId } from "../types";
 import { getView } from "../view/transform";
 import {
+  AuthorizationError,
   authenticateRequest,
   createSession,
   getBearerToken,
@@ -14,7 +15,8 @@ import type {
   CollaborationContext,
   ErrorResponseBody,
   LoginRequestBody,
-  OperationRequestBody
+  OperationRequestBody,
+  UpdateUserRequestBody
 } from "./types";
 import { renderHomePage } from "./page";
 import { analyzeDeleteImpact } from "./delete-impact";
@@ -89,13 +91,8 @@ export async function handleHttpRequest(
       requireAdmin(actor);
       const targetId = decodeURIComponent(userRouteMatch[1]);
       const target = requireUser(context, targetId);
-      const body = await readJsonBody<Partial<User>>(request);
-      const updated: User = {
-        ...target,
-        name: typeof body.name === "string" ? body.name : target.name,
-        role: isUserRole(body.role) ? body.role : target.role,
-        department: typeof body.department === "string" ? body.department : target.department
-      };
+      const body = await readJsonBody<UpdateUserRequestBody>(request);
+      const updated = updateUser(context, target, body);
       context.users.set(target.id, updated);
       rotatePolicyVersion(context);
       onDocumentChanged();
@@ -103,7 +100,24 @@ export async function handleHttpRequest(
         ok: true,
         user: publicUser(updated),
         policyVersion: context.policyVersion,
-        sessionsInvalidated: true
+        sessionsRefreshed: true
+      });
+      return;
+    }
+
+    if (request.method === "DELETE" && userRouteMatch) {
+      const actor = authenticateRequest(context, request);
+      requireAdmin(actor);
+      const targetId = decodeURIComponent(userRouteMatch[1]);
+      const target = requireUser(context, targetId);
+      deleteUser(context, actor, target);
+      rotatePolicyVersion(context);
+      revokeUserSessions(context, target.id);
+      onDocumentChanged();
+      sendJson(response, 200, {
+        ok: true,
+        deletedUserId: target.id,
+        policyVersion: context.policyVersion
       });
       return;
     }
@@ -223,14 +237,80 @@ export function requireUser(context: CollaborationContext, userId: string | null
 function publicUser(user: User) {
   return {
     id: user.id,
+    username: user.username,
     name: user.name,
     role: user.role,
-    department: user.department
+    department: user.department,
+    createdAt: user.createdAt
   };
 }
 
-function isUserRole(value: unknown): value is User["role"] {
-  return value === "admin" || value === "manager" || value === "member" || value === "guest";
+function updateUser(
+  context: CollaborationContext,
+  target: User,
+  body: UpdateUserRequestBody
+): User {
+  const role = body.role === undefined ? target.role : parseUserRole(body.role);
+  const department =
+    typeof body.department === "string"
+      ? body.department
+      : body.role === undefined
+        ? target.department
+        : defaultDepartmentForRole(role, target.department);
+  if (target.role === "admin" && role !== "admin" && countAdmins(context) <= 1) {
+    throw new AuthorizationError("Cannot remove the last administrator.");
+  }
+
+  return {
+    ...target,
+    name: typeof body.name === "string" ? body.name : target.name,
+    role,
+    department
+  };
+}
+
+function defaultDepartmentForRole(role: User["role"], currentDepartment: string): string {
+  if (role === "member" || role === "manager") {
+    return currentDepartment === "external" || currentDepartment === "all" ? "dev" : currentDepartment;
+  }
+  if (role === "guest") {
+    return "external";
+  }
+  if (role === "admin") {
+    return currentDepartment || "all";
+  }
+  return currentDepartment;
+}
+
+function deleteUser(context: CollaborationContext, actor: User, target: User): void {
+  if (actor.id === target.id) {
+    throw new AuthorizationError("Cannot delete the current administrator.");
+  }
+
+  if (target.role === "admin" && countAdmins(context) <= 1) {
+    throw new AuthorizationError("Cannot delete the last administrator.");
+  }
+
+  context.users.delete(target.id);
+}
+
+function revokeUserSessions(context: CollaborationContext, userId: UserId): void {
+  for (const [token, session] of context.sessions) {
+    if (session.userId === userId) {
+      context.sessions.delete(token);
+    }
+  }
+}
+
+function countAdmins(context: CollaborationContext): number {
+  return Array.from(context.users.values()).filter((user) => user.role === "admin").length;
+}
+
+function parseUserRole(value: unknown): User["role"] {
+  if (value === "admin" || value === "manager" || value === "member" || value === "guest") {
+    return value;
+  }
+  throw new Error(`Unsupported user role: ${String(value)}`);
 }
 
 function errorBody(error: unknown): ErrorResponseBody {

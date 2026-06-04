@@ -15,9 +15,11 @@ export type OperationType =
 
 export interface User {
   id: UserId;
+  username: string;
   name: string;
   role: UserRole;
   department: string;
+  createdAt: number;
 }
 
 export interface DocumentMeta {
