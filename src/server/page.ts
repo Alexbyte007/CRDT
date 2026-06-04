@@ -366,6 +366,8 @@ export function renderHomePage(): string {
             <option value="u-dev-manager">研发经理 / manager / dev</option>
             <option value="u-dev-member">研发成员 / member / dev</option>
             <option value="u-guest">访客 / guest / external</option>
+            <option value="u-test-manager">测试组长 / manager / test</option>
+            <option value="u-test-member">测试成员 / member / test</option>
           </select>
         </div>
         <button id="login">登录</button>
