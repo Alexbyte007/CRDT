@@ -221,6 +221,70 @@ export function renderHomePage(): string {
         max-width: 260px;
       }
 
+      .multi-select {
+        position: relative;
+        display: grid;
+        gap: 6px;
+      }
+
+      .multi-select summary {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 38px;
+        border: 1px solid #cbd2dc;
+        border-radius: 6px;
+        padding: 9px 10px;
+        background: #ffffff;
+        color: #20242a;
+        cursor: pointer;
+        list-style: none;
+      }
+
+      .multi-select summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .multi-select-menu {
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        right: 0;
+        z-index: 20;
+        display: grid;
+        gap: 2px;
+        max-height: 220px;
+        overflow: auto;
+        padding: 6px;
+        border: 1px solid #cbd2dc;
+        border-radius: 6px;
+        background: #ffffff;
+        box-shadow: 0 12px 28px rgba(31, 41, 55, 0.14);
+      }
+
+      .multi-select-option {
+        width: 100%;
+        border: 0;
+        background: transparent;
+        color: #20242a;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 7px 8px;
+        font-size: 13px;
+        font-weight: 500;
+        text-align: left;
+      }
+
+      .multi-select-option:hover {
+        background: #f1f5f9;
+      }
+
+      .multi-select-check {
+        color: #1f6feb;
+        font-weight: 800;
+      }
+
       .meta {
         margin-top: 6px;
         font-size: 12px;
@@ -421,10 +485,21 @@ export function renderHomePage(): string {
       </div>
     </div>
 
+    <div id="noticeDialog" class="modal hidden" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="noticeDialogTitle">
+        <h2 id="noticeDialogTitle" class="modal-title">操作提示</h2>
+        <p id="noticeDialogCopy" class="modal-copy"></p>
+        <div class="modal-actions">
+          <button id="noticeDialogOk" type="button">确定</button>
+        </div>
+      </div>
+    </div>
+
     <script>
       const state = {
         token: "",
         user: null,
+        users: [],
         policyVersion: 0,
         view: null,
         stateVector: "",
@@ -460,11 +535,16 @@ export function renderHomePage(): string {
         deleteDialogUsers: document.querySelector("#deleteDialogUsers"),
         deleteDialogCancel: document.querySelector("#deleteDialogCancel"),
         deleteDialogKeepChildren: document.querySelector("#deleteDialogKeepChildren"),
-        deleteDialogForce: document.querySelector("#deleteDialogForce")
+        deleteDialogForce: document.querySelector("#deleteDialogForce"),
+        noticeDialog: document.querySelector("#noticeDialog"),
+        noticeDialogTitle: document.querySelector("#noticeDialogTitle"),
+        noticeDialogCopy: document.querySelector("#noticeDialogCopy"),
+        noticeDialogOk: document.querySelector("#noticeDialogOk")
       };
 
       const offlineStorageKey = "crdt-editor-offline-queue-v1";
       let deleteDialogResolver = null;
+      let noticeDialogResolver = null;
 
       function currentUserId() {
         return state.user ? state.user.id : els.loginUser.value;
@@ -526,6 +606,7 @@ export function renderHomePage(): string {
         state.token = body.token;
         state.user = body.user;
         state.policyVersion = body.policyVersion || 0;
+        await loadAdminUsers();
         clearAllAutoSaveTimers();
         state.editing.drafts = {};
         setLoginStatus("");
@@ -547,6 +628,7 @@ export function renderHomePage(): string {
           }
           state.token = "";
           state.user = null;
+          state.users = [];
           state.view = null;
           state.stateVector = "";
           state.offline.connected = false;
@@ -565,6 +647,16 @@ export function renderHomePage(): string {
         const body = await requestJson("/api/view");
         state.view = body.view || body;
         state.stateVector = body.stateVector || state.stateVector;
+        state.policyVersion = body.policyVersion || state.policyVersion;
+      }
+
+      async function loadAdminUsers() {
+        if (!state.token || !state.user || state.user.role !== "admin") {
+          state.users = [];
+          return;
+        }
+        const body = await requestJson("/api/users");
+        state.users = body.users || [];
         state.policyVersion = body.policyVersion || state.policyVersion;
       }
 
@@ -669,6 +761,19 @@ export function renderHomePage(): string {
           policyPanel.appendChild(editPolicy.element);
           policyPanel.appendChild(addPolicy.element);
           policyPanel.appendChild(deletePolicy.element);
+          if (node.children && node.children.length > 0) {
+            const advancedPolicy = renderAdvancedPermissionSelect(
+              "删除冲突高级权限",
+              node.acl.advancedPermissions,
+              (userIds) =>
+                updateNodeAcl(
+                  node.id,
+                  { advancedPermissions: { deleteConflictResolverUserIds: userIds } },
+                  "删除冲突高级权限已更新"
+                )
+            );
+            policyPanel.appendChild(advancedPolicy.element);
+          }
           box.appendChild(policyPanel);
         }
 
@@ -707,7 +812,9 @@ export function renderHomePage(): string {
             deleteButton.type = "button";
             deleteButton.className = "danger";
             deleteButton.textContent = "删除";
-            deleteButton.addEventListener("click", () => deleteTreeNode(node.id).catch((error) => setStatus(error.message)));
+            deleteButton.addEventListener("click", () =>
+              deleteTreeNode(node.id).catch((error) => showNoticeDialog("操作失败", error.message))
+            );
             actions.appendChild(deleteButton);
           }
           box.appendChild(actions);
@@ -739,6 +846,74 @@ export function renderHomePage(): string {
         return {
           element: policy,
           select: audience
+        };
+      }
+
+      function renderAdvancedPermissionSelect(label, advancedPermissions, onChange) {
+        const policy = document.createElement("label");
+        policy.className = "node-policy";
+        policy.textContent = label;
+        const selectedUserIds = new Set(
+          (advancedPermissions && advancedPermissions.deleteConflictResolverUserIds) || []
+        );
+        const assignableUsers = state.users.filter((user) => user.role !== "admin");
+        const details = document.createElement("details");
+        details.className = "multi-select";
+        details.dataset.field = "advanced-delete-conflict";
+        const summary = document.createElement("summary");
+        const menu = document.createElement("div");
+        menu.className = "multi-select-menu";
+
+        function selectedLabel() {
+          if (selectedUserIds.size === 0) return "无高级授权";
+          const selectedUsers = assignableUsers.filter((user) => selectedUserIds.has(user.id));
+          if (selectedUsers.length <= 2) {
+            return selectedUsers.map((user) => user.name).join("、");
+          }
+          return "已授权 " + selectedUsers.length + " 人";
+        }
+
+        function renderMenu() {
+          summary.textContent = selectedLabel();
+          menu.innerHTML = "";
+          for (const user of assignableUsers) {
+            const option = document.createElement("button");
+            option.type = "button";
+            option.className = "multi-select-option";
+            option.dataset.userId = user.id;
+            option.innerHTML =
+              "<span>" +
+              escapeHtml(user.name + " / " + user.role + " / " + user.department) +
+              "</span><span class=\\\"multi-select-check\\\">" +
+              (selectedUserIds.has(user.id) ? "✓" : "") +
+              "</span>";
+            option.addEventListener("click", () => {
+              if (selectedUserIds.has(user.id)) {
+                selectedUserIds.delete(user.id);
+              } else {
+                selectedUserIds.add(user.id);
+              }
+              renderMenu();
+              onChange(Array.from(selectedUserIds));
+            });
+            menu.appendChild(option);
+          }
+        }
+
+        renderMenu();
+        details.appendChild(summary);
+        details.appendChild(menu);
+        if (assignableUsers.length === 0) {
+          details.setAttribute("aria-disabled", "true");
+        }
+        const hint = document.createElement("span");
+        hint.className = "hint";
+        hint.textContent = "点击下拉项可多选，✓ 表示已授权";
+        policy.appendChild(details);
+        policy.appendChild(hint);
+        return {
+          element: policy,
+          select: details
         };
       }
 
@@ -922,8 +1097,8 @@ export function renderHomePage(): string {
           return;
         }
 
-        if (!state.user || state.user.role !== "admin") {
-          setStatus(formatDeleteRejectedMessage(impact));
+        if (!impact.canResolveConflict) {
+          await showNoticeDialog("删除被拒绝", formatDeleteRejectedMessage(impact));
           return;
         }
 
@@ -994,6 +1169,28 @@ export function renderHomePage(): string {
         els.deleteDialog.classList.add("hidden");
         els.deleteDialog.setAttribute("aria-hidden", "true");
         resolve(result);
+      }
+
+      function showNoticeDialog(title, message) {
+        return new Promise((resolve) => {
+          if (noticeDialogResolver) {
+            noticeDialogResolver();
+          }
+          noticeDialogResolver = resolve;
+          els.noticeDialogTitle.textContent = title;
+          els.noticeDialogCopy.textContent = message;
+          els.noticeDialog.classList.remove("hidden");
+          els.noticeDialog.setAttribute("aria-hidden", "false");
+        });
+      }
+
+      function closeNoticeDialog() {
+        if (!noticeDialogResolver) return;
+        const resolve = noticeDialogResolver;
+        noticeDialogResolver = null;
+        els.noticeDialog.classList.add("hidden");
+        els.noticeDialog.setAttribute("aria-hidden", "true");
+        resolve();
       }
 
       function formatDeleteImpactCopy(impact) {
@@ -1150,6 +1347,12 @@ export function renderHomePage(): string {
       els.deleteDialog.addEventListener("click", (event) => {
         if (event.target === els.deleteDialog) {
           closeDeleteImpactDialog(null);
+        }
+      });
+      els.noticeDialogOk.addEventListener("click", () => closeNoticeDialog());
+      els.noticeDialog.addEventListener("click", (event) => {
+        if (event.target === els.noticeDialog) {
+          closeNoticeDialog();
         }
       });
 

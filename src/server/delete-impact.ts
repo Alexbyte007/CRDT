@@ -1,5 +1,5 @@
 import { getNodeSnapshot } from "../crdt/snapshot";
-import type { NodeId, TreeNodeSnapshot, User } from "../types";
+import { AccessControlError, type NodeId, type TreeNodeSnapshot, type User } from "../types";
 import type { CollaborationContext } from "./types";
 
 export interface DeleteImpactVisibleNode {
@@ -22,6 +22,7 @@ export interface DeleteImpactResult {
   visibleNodes: DeleteImpactVisibleNode[];
   affectedUsers: DeleteImpactUser[];
   blocksSilentDelete: boolean;
+  canResolveConflict: boolean;
 }
 
 export function analyzeDeleteImpact(
@@ -34,6 +35,14 @@ export function analyzeDeleteImpact(
     throw new Error(`Node does not exist: ${nodeId}`);
   }
 
+  if (!context.policyEngine.canViewNode(actor, root)) {
+    throw new AccessControlError(`User ${actor.id} cannot view node ${nodeId}.`);
+  }
+
+  if (!context.policyEngine.canEditNode(actor, root, "deleteNode")) {
+    throw new AccessControlError(`User ${actor.id} is not allowed to delete node ${nodeId}.`);
+  }
+
   const subtree = collectSubtree(context, root);
   const affectedUsersById = new Map<string, DeleteImpactUser>();
   const visibleNodes: DeleteImpactVisibleNode[] = [];
@@ -42,11 +51,11 @@ export function analyzeDeleteImpact(
   const rootVisibleUserIds = new Set(deletedRootVisibleTo);
 
   for (const node of subtree.slice(1)) {
-    const visibleTo = usersWhoCanView(context, actor, node).filter(
-      (user) => !rootVisibleUserIds.has(user.id)
-    );
+    const visibleTo = usersWhoCanView(context, actor, node);
+    const visibleOutsideRootAudience = visibleTo.some((user) => !rootVisibleUserIds.has(user.id));
+    const hiddenFromActor = !context.policyEngine.canViewNode(actor, node);
 
-    if (visibleTo.length === 0) {
+    if (visibleTo.length === 0 || (!hiddenFromActor && !visibleOutsideRootAudience)) {
       continue;
     }
 
@@ -72,8 +81,19 @@ export function analyzeDeleteImpact(
     deletedRootVisibleTo,
     visibleNodes,
     affectedUsers: Array.from(affectedUsersById.values()),
-    blocksSilentDelete: visibleNodes.length > 0
+    blocksSilentDelete: subtree.length > 1,
+    canResolveConflict: canResolveDeleteConflict(actor, root)
   };
+}
+
+export function canResolveDeleteConflict(actor: User, node: TreeNodeSnapshot): boolean {
+  if (actor.role === "admin") {
+    return true;
+  }
+
+  return (
+    node.acl.advancedPermissions?.deleteConflictResolverUserIds?.includes(actor.id) ?? false
+  );
 }
 
 function usersWhoCanView(context: CollaborationContext, actor: User, node: TreeNodeSnapshot): User[] {

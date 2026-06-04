@@ -3,7 +3,7 @@ import { nodeIsDeleted } from "../crdt/conflicts";
 import { getNodeSnapshot } from "../crdt/snapshot";
 import { encodeStateVector } from "../crdt/state-vector";
 import { getView, putOperation } from "../view/transform";
-import { analyzeDeleteImpact } from "./delete-impact";
+import { analyzeDeleteImpact, canResolveDeleteConflict } from "./delete-impact";
 import { AccessControlError, type User, type UserView, type ViewOperation, type ViewOperationEnvelope } from "../types";
 import type {
   BatchViewOperationEnvelope,
@@ -123,21 +123,29 @@ function preflightViewOperation(
       const nodeList = impact.visibleNodes
         .map((node) => `${node.title} (${node.id})`)
         .join(", ");
-      if (user.role === "admin" && operation.confirmedImpact === true) {
+      if (impact.canResolveConflict && operation.confirmedImpact === true) {
         return;
       }
       throw new AccessControlError(
-        user.role === "admin"
+        impact.canResolveConflict
           ? `Delete rejected: descendant nodes are visible to broader audiences. Confirm the impact before cascading deletion: ${nodeList}.`
           : `Delete rejected: descendant nodes are visible to broader audiences. Contact an administrator or handle these child projects first: ${nodeList}.`
       );
     }
   }
 
-  if (operation.type === "deleteNodeKeepChildren" && user.role !== "admin") {
+  if (
+    operation.type === "deleteNodeKeepChildren" &&
+    target.children.length > 0 &&
+    !canResolveDeleteConflict(user, target)
+  ) {
     throw new AccessControlError(
-      "Delete rejected: only administrators can delete a parent while preserving child nodes."
+      "Delete rejected: advanced delete-conflict permission is required to delete a parent while preserving child nodes."
     );
+  }
+
+  if (operation.type === "updateAcl" && operation.aclPatch.advancedPermissions) {
+    validateAdvancedPermissionUsers(context, operation.aclPatch.advancedPermissions);
   }
 }
 
@@ -213,6 +221,17 @@ function normalizeOperation(input: ApplyViewOperationInput): ViewOperation {
   }
 
   throw new Error("Request must include either operation or envelope.");
+}
+
+function validateAdvancedPermissionUsers(
+  context: CollaborationContext,
+  advancedPermissions: { deleteConflictResolverUserIds?: string[] }
+): void {
+  for (const userId of advancedPermissions.deleteConflictResolverUserIds ?? []) {
+    if (!context.users.has(userId)) {
+      throw new AccessControlError(`Unknown advanced permission user: ${userId}`);
+    }
+  }
 }
 
 function normalizeError(error: unknown): { name: string; code?: string; message: string } {

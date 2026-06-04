@@ -21,9 +21,6 @@ describe("privacy view transform", () => {
       "node-dev-plan",
       "node-module-a",
       "node-dev-requirements",
-      "node-test-announcement",
-      "node-test-plan",
-      "node-test-bugs",
       "node-finance"
     ]);
     expect(flattenIds(managerView.roots)).toEqual([
@@ -274,7 +271,10 @@ describe("privacy view transform", () => {
       allowedRoles: ["admin", "manager", "member", "guest"],
       contentEditableRoles: ["admin", "manager"],
       childAddableRoles: ["admin", "manager"],
-      deletableRoles: ["admin"]
+      deletableRoles: ["admin"],
+      advancedPermissions: {
+        deleteConflictResolverUserIds: []
+      }
     });
     expect(adminNode?.permissions.canEditAcl).toBe(true);
     expect(memberNode?.acl).toBeUndefined();

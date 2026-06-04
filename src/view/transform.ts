@@ -4,6 +4,7 @@ import {
   type FullDocOperation,
   type NewTreeNode,
   type NodeAcl,
+  type NodeAdvancedPermissions,
   type NodeAttrs,
   type NodeId,
   type TreeNodeSnapshot,
@@ -208,7 +209,8 @@ function projectNode(
       allowedRoles: node.acl.allowedRoles,
       contentEditableRoles: node.acl.contentEditableRoles ?? node.acl.editableRoles,
       childAddableRoles: node.acl.childAddableRoles ?? node.acl.editableRoles,
-      deletableRoles: node.acl.deletableRoles ?? node.acl.editableRoles
+      deletableRoles: node.acl.deletableRoles ?? node.acl.editableRoles,
+      advancedPermissions: normalizeAdvancedPermissions(node.acl.advancedPermissions)
     };
   }
 
@@ -265,15 +267,30 @@ function buildViewPermissions(
 function sanitizeAclPatch(
   aclPatch: Pick<
     Partial<NodeAcl>,
-    "visibility" | "allowedRoles" | "contentEditableRoles" | "childAddableRoles" | "deletableRoles"
+    | "visibility"
+    | "allowedRoles"
+    | "contentEditableRoles"
+    | "childAddableRoles"
+    | "deletableRoles"
+    | "advancedPermissions"
   >
 ): Pick<
   Partial<NodeAcl>,
-  "visibility" | "allowedRoles" | "contentEditableRoles" | "childAddableRoles" | "deletableRoles"
+  | "visibility"
+  | "allowedRoles"
+  | "contentEditableRoles"
+  | "childAddableRoles"
+  | "deletableRoles"
+  | "advancedPermissions"
 > {
   const result: Pick<
     Partial<NodeAcl>,
-    "visibility" | "allowedRoles" | "contentEditableRoles" | "childAddableRoles" | "deletableRoles"
+    | "visibility"
+    | "allowedRoles"
+    | "contentEditableRoles"
+    | "childAddableRoles"
+    | "deletableRoles"
+    | "advancedPermissions"
   > = {};
   if (aclPatch.visibility !== undefined) {
     if (!["public", "department", "private", "restricted"].includes(aclPatch.visibility)) {
@@ -285,6 +302,9 @@ function sanitizeAclPatch(
     if (aclPatch[key] !== undefined) {
       result[key] = sanitizeRoleList(aclPatch[key], key);
     }
+  }
+  if (aclPatch.advancedPermissions !== undefined) {
+    result.advancedPermissions = sanitizeAdvancedPermissions(aclPatch.advancedPermissions);
   }
   return result;
 }
@@ -299,6 +319,47 @@ function sanitizeRoleList(value: unknown, field: string): Array<"admin" | "manag
     }
   }
   return value;
+}
+
+function sanitizeAdvancedPermissions(value: unknown): NodeAdvancedPermissions {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new AccessControlError("advancedPermissions must be an object.");
+  }
+
+  const input = value as Record<string, unknown>;
+  return {
+    deleteConflictResolverUserIds: sanitizeUserIdList(
+      input.deleteConflictResolverUserIds,
+      "advancedPermissions.deleteConflictResolverUserIds"
+    )
+  };
+}
+
+function normalizeAdvancedPermissions(value: NodeAdvancedPermissions | undefined): NodeAdvancedPermissions {
+  return {
+    deleteConflictResolverUserIds: value?.deleteConflictResolverUserIds ?? []
+  };
+}
+
+function sanitizeUserIdList(value: unknown, field: string): string[] {
+  if (value === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(value)) {
+    throw new AccessControlError(`${field} must be an array.`);
+  }
+
+  const userIds: string[] = [];
+  for (const userId of value) {
+    if (typeof userId !== "string" || userId.trim().length === 0) {
+      throw new AccessControlError(`${field} must contain non-empty user ids.`);
+    }
+    if (!userIds.includes(userId)) {
+      userIds.push(userId);
+    }
+  }
+  return userIds;
 }
 
 function getOperationTarget(
