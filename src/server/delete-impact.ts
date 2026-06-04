@@ -51,11 +51,11 @@ export function analyzeDeleteImpact(
   const rootVisibleUserIds = new Set(deletedRootVisibleTo);
 
   for (const node of subtree.slice(1)) {
-    const visibleTo = usersWhoCanView(context, actor, node).filter(
-      (user) => !rootVisibleUserIds.has(user.id)
-    );
+    const visibleTo = usersWhoCanView(context, actor, node);
+    const visibleOutsideRootAudience = visibleTo.some((user) => !rootVisibleUserIds.has(user.id));
+    const hiddenFromActor = !context.policyEngine.canViewNode(actor, node);
 
-    if (visibleTo.length === 0) {
+    if (visibleTo.length === 0 || (!hiddenFromActor && !visibleOutsideRootAudience)) {
       continue;
     }
 
@@ -81,7 +81,7 @@ export function analyzeDeleteImpact(
     deletedRootVisibleTo,
     visibleNodes,
     affectedUsers: Array.from(affectedUsersById.values()),
-    blocksSilentDelete: visibleNodes.length > 0,
+    blocksSilentDelete: subtree.length > 1,
     canResolveConflict: canResolveDeleteConflict(actor, root)
   };
 }

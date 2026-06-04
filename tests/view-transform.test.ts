@@ -21,9 +21,6 @@ describe("privacy view transform", () => {
       "node-dev-plan",
       "node-module-a",
       "node-dev-requirements",
-      "node-test-announcement",
-      "node-test-plan",
-      "node-test-bugs",
       "node-finance"
     ]);
     expect(flattenIds(managerView.roots)).toEqual([

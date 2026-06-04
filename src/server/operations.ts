@@ -134,7 +134,11 @@ function preflightViewOperation(
     }
   }
 
-  if (operation.type === "deleteNodeKeepChildren" && !canResolveDeleteConflict(user, target)) {
+  if (
+    operation.type === "deleteNodeKeepChildren" &&
+    target.children.length > 0 &&
+    !canResolveDeleteConflict(user, target)
+  ) {
     throw new AccessControlError(
       "Delete rejected: advanced delete-conflict permission is required to delete a parent while preserving child nodes."
     );

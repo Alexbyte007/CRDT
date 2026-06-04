@@ -93,9 +93,6 @@ describe("privacy-aware conflict resolution", () => {
     expect(snapshot.nodes["node-root"].children).toEqual([
       "node-public",
       "node-dev-requirements",
-      "node-test-announcement",
-      "node-test-plan",
-      "node-test-bugs",
       "node-finance"
     ]);
     expect(snapshot.tombstones["node-dev-plan"]).toBeDefined();

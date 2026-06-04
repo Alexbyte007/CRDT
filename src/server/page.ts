@@ -221,6 +221,70 @@ export function renderHomePage(): string {
         max-width: 260px;
       }
 
+      .multi-select {
+        position: relative;
+        display: grid;
+        gap: 6px;
+      }
+
+      .multi-select summary {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 38px;
+        border: 1px solid #cbd2dc;
+        border-radius: 6px;
+        padding: 9px 10px;
+        background: #ffffff;
+        color: #20242a;
+        cursor: pointer;
+        list-style: none;
+      }
+
+      .multi-select summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .multi-select-menu {
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        right: 0;
+        z-index: 20;
+        display: grid;
+        gap: 2px;
+        max-height: 220px;
+        overflow: auto;
+        padding: 6px;
+        border: 1px solid #cbd2dc;
+        border-radius: 6px;
+        background: #ffffff;
+        box-shadow: 0 12px 28px rgba(31, 41, 55, 0.14);
+      }
+
+      .multi-select-option {
+        width: 100%;
+        border: 0;
+        background: transparent;
+        color: #20242a;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 7px 8px;
+        font-size: 13px;
+        font-weight: 500;
+        text-align: left;
+      }
+
+      .multi-select-option:hover {
+        background: #f1f5f9;
+      }
+
+      .multi-select-check {
+        color: #1f6feb;
+        font-weight: 800;
+      }
+
       .meta {
         margin-top: 6px;
         font-size: 12px;
@@ -365,8 +429,6 @@ export function renderHomePage(): string {
             <option value="u-admin">管理员 / admin / all</option>
             <option value="u-dev-manager">研发经理 / manager / dev</option>
             <option value="u-dev-member">研发成员 / member / dev</option>
-            <option value="u-test-manager">测试组长 / manager / test</option>
-            <option value="u-test-member">测试成员 / member / test</option>
             <option value="u-guest">访客 / guest / external</option>
           </select>
         </div>
@@ -690,16 +752,6 @@ export function renderHomePage(): string {
               "节点删除权限已更新"
             )
           );
-          const advancedPolicy = renderAdvancedPermissionSelect(
-            "删除冲突高级权限",
-            node.acl.advancedPermissions,
-            (userIds) =>
-              updateNodeAcl(
-                node.id,
-                { advancedPermissions: { deleteConflictResolverUserIds: userIds } },
-                "删除冲突高级权限已更新"
-              )
-          );
           const operationPolicies = [editPolicy, addPolicy, deletePolicy];
           visibilityPolicy.select.addEventListener("change", () =>
             syncOperationAclControls(visibilityPolicy.select, operationPolicies)
@@ -709,7 +761,19 @@ export function renderHomePage(): string {
           policyPanel.appendChild(editPolicy.element);
           policyPanel.appendChild(addPolicy.element);
           policyPanel.appendChild(deletePolicy.element);
-          policyPanel.appendChild(advancedPolicy.element);
+          if (node.children && node.children.length > 0) {
+            const advancedPolicy = renderAdvancedPermissionSelect(
+              "删除冲突高级权限",
+              node.acl.advancedPermissions,
+              (userIds) =>
+                updateNodeAcl(
+                  node.id,
+                  { advancedPermissions: { deleteConflictResolverUserIds: userIds } },
+                  "删除冲突高级权限已更新"
+                )
+            );
+            policyPanel.appendChild(advancedPolicy.element);
+          }
           box.appendChild(policyPanel);
         }
 
@@ -789,41 +853,67 @@ export function renderHomePage(): string {
         const policy = document.createElement("label");
         policy.className = "node-policy";
         policy.textContent = label;
-        const select = document.createElement("select");
-        select.dataset.field = "advanced-delete-conflict";
         const selectedUserIds = new Set(
           (advancedPermissions && advancedPermissions.deleteConflictResolverUserIds) || []
         );
-        const selectedUserId = selectedUserIds.size === 1 ? Array.from(selectedUserIds)[0] : "";
         const assignableUsers = state.users.filter((user) => user.role !== "admin");
-        const options = [
-          '<option value="">无高级授权</option>',
-          ...assignableUsers.map((user) => {
-            const selected = selectedUserId === user.id ? " selected" : "";
-            return (
-              '<option value="' +
-              escapeHtml(user.id) +
-              '"' +
-              selected +
-              ">" +
-              escapeHtml(user.name + " / " + user.role + " / " + user.department) +
-              "</option>"
-            );
-          })
-        ];
-        if (selectedUserIds.size > 1) {
-          options.splice(1, 0, '<option value="__multiple" selected>多个用户已授权</option>');
+        const details = document.createElement("details");
+        details.className = "multi-select";
+        details.dataset.field = "advanced-delete-conflict";
+        const summary = document.createElement("summary");
+        const menu = document.createElement("div");
+        menu.className = "multi-select-menu";
+
+        function selectedLabel() {
+          if (selectedUserIds.size === 0) return "无高级授权";
+          const selectedUsers = assignableUsers.filter((user) => selectedUserIds.has(user.id));
+          if (selectedUsers.length <= 2) {
+            return selectedUsers.map((user) => user.name).join("、");
+          }
+          return "已授权 " + selectedUsers.length + " 人";
         }
-        select.innerHTML = options.join("");
-        select.disabled = assignableUsers.length === 0;
-        select.addEventListener("change", () => {
-          if (select.value === "__multiple") return;
-          onChange(select.value ? [select.value] : []);
-        });
-        policy.appendChild(select);
+
+        function renderMenu() {
+          summary.textContent = selectedLabel();
+          menu.innerHTML = "";
+          for (const user of assignableUsers) {
+            const option = document.createElement("button");
+            option.type = "button";
+            option.className = "multi-select-option";
+            option.dataset.userId = user.id;
+            option.innerHTML =
+              "<span>" +
+              escapeHtml(user.name + " / " + user.role + " / " + user.department) +
+              "</span><span class=\\\"multi-select-check\\\">" +
+              (selectedUserIds.has(user.id) ? "✓" : "") +
+              "</span>";
+            option.addEventListener("click", () => {
+              if (selectedUserIds.has(user.id)) {
+                selectedUserIds.delete(user.id);
+              } else {
+                selectedUserIds.add(user.id);
+              }
+              renderMenu();
+              onChange(Array.from(selectedUserIds));
+            });
+            menu.appendChild(option);
+          }
+        }
+
+        renderMenu();
+        details.appendChild(summary);
+        details.appendChild(menu);
+        if (assignableUsers.length === 0) {
+          details.setAttribute("aria-disabled", "true");
+        }
+        const hint = document.createElement("span");
+        hint.className = "hint";
+        hint.textContent = "点击下拉项可多选，✓ 表示已授权";
+        policy.appendChild(details);
+        policy.appendChild(hint);
         return {
           element: policy,
-          select
+          select: details
         };
       }
 
