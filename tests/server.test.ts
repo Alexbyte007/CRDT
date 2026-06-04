@@ -30,7 +30,12 @@ describe("collaboration server", () => {
 
     expect(response.status).toBe(200);
     expect(body.stateVector.length).toBeGreaterThan(0);
-    expect(flattenViewIds(body.view)).toEqual(["node-root", "node-public", "node-dev-plan"]);
+    expect(flattenViewIds(body.view)).toEqual([
+      "node-root",
+      "node-public",
+      "node-dev-plan",
+      "node-dev-requirements"
+    ]);
   });
 
   it("treats the dev-team visibility choice as role-based instead of department-only", async () => {
@@ -227,12 +232,14 @@ describe("collaboration server", () => {
       {
         id: "node-impact-public-child",
         title: "其他用户可见子节点",
-        visibleTo: ["u-dev-manager", "u-dev-member", "u-guest"]
+        visibleTo: ["u-dev-manager", "u-dev-member", "u-test-manager", "u-test-member", "u-guest"]
       }
     ]);
     expect(impact.affectedUsers.map((user) => user.id)).toEqual([
       "u-dev-manager",
       "u-dev-member",
+      "u-test-manager",
+      "u-test-member",
       "u-guest"
     ]);
 
@@ -250,7 +257,13 @@ describe("collaboration server", () => {
 
     expect(leafImpactResponse.status).toBe(200);
     expect(leafImpact.deleteCount).toBe(1);
-    expect(leafImpact.deletedRootVisibleTo).toEqual(["u-dev-manager", "u-dev-member", "u-guest"]);
+    expect(leafImpact.deletedRootVisibleTo).toEqual([
+      "u-dev-manager",
+      "u-dev-member",
+      "u-test-manager",
+      "u-test-member",
+      "u-guest"
+    ]);
     expect(leafImpact.visibleNodes).toEqual([]);
     expect(leafImpact.affectedUsers).toEqual([]);
     expect(leafImpact.blocksSilentDelete).toBe(false);
@@ -413,10 +426,10 @@ describe("collaboration server", () => {
       {
         id: "node-broader-child",
         title: "研发成员仍可见子项目",
-        visibleTo: ["u-dev-member"]
+        visibleTo: ["u-dev-member", "u-test-member"]
       }
     ]);
-    expect(impact.affectedUsers.map((user) => user.id)).toEqual(["u-dev-member"]);
+    expect(impact.affectedUsers.map((user) => user.id)).toEqual(["u-dev-member", "u-test-member"]);
 
     const response = await fetch(`${baseUrl}/api/operations`, {
       method: "POST",

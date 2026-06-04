@@ -20,15 +20,25 @@ describe("privacy view transform", () => {
       "node-public",
       "node-dev-plan",
       "node-module-a",
+      "node-dev-requirements",
+      "node-test-announcement",
+      "node-test-plan",
+      "node-test-bugs",
       "node-finance"
     ]);
     expect(flattenIds(managerView.roots)).toEqual([
       "node-root",
       "node-public",
       "node-dev-plan",
-      "node-module-a"
+      "node-module-a",
+      "node-dev-requirements"
     ]);
-    expect(flattenIds(memberView.roots)).toEqual(["node-root", "node-public", "node-dev-plan"]);
+    expect(flattenIds(memberView.roots)).toEqual([
+      "node-root",
+      "node-public",
+      "node-dev-plan",
+      "node-dev-requirements"
+    ]);
     expect(flattenIds(guestView.roots)).toEqual(["node-root", "node-public"]);
   });
 

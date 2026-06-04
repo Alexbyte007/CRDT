@@ -23,6 +23,10 @@ describe("Yjs JSON tree document operations", () => {
     expect(snapshot.nodes["node-root"].children).toEqual([
       "node-public",
       "node-dev-plan",
+      "node-dev-requirements",
+      "node-test-announcement",
+      "node-test-plan",
+      "node-test-bugs",
       "node-finance"
     ]);
     expect(snapshot.nodes["node-dev-plan"].children).toEqual(["node-module-a"]);
@@ -135,7 +139,14 @@ describe("Yjs JSON tree document operations", () => {
     expect(deleted.map((node) => node.id)).toEqual(["node-dev-plan", "node-module-a"]);
     expect(snapshot.nodes["node-dev-plan"]).toBeUndefined();
     expect(snapshot.nodes["node-module-a"]).toBeUndefined();
-    expect(snapshot.nodes["node-root"].children).toEqual(["node-public", "node-finance"]);
+    expect(snapshot.nodes["node-root"].children).toEqual([
+      "node-public",
+      "node-dev-requirements",
+      "node-test-announcement",
+      "node-test-plan",
+      "node-test-bugs",
+      "node-finance"
+    ]);
     expect(snapshot.tombstones["node-dev-plan"].updatedAt).toBe(6);
     expect(snapshot.tombstones["node-module-a"].updatedAt).toBe(6);
   });
@@ -158,6 +169,10 @@ describe("Yjs JSON tree document operations", () => {
     expect(snapshot.nodes["node-root"].children).toEqual([
       "node-public",
       "node-module-a",
+      "node-dev-requirements",
+      "node-test-announcement",
+      "node-test-plan",
+      "node-test-bugs",
       "node-finance"
     ]);
     expect(snapshot.tombstones["node-dev-plan"].updatedAt).toBe(7);

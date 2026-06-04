@@ -18,6 +18,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { createSampleDocument, sampleUsers } from "../src/fixtures/sample";
 import { getView } from "../src/view/transform";
 import { putOperation } from "../src/view/transform";
+import { applyFullDocOperation } from "../src/crdt/operations";
 import { AccessControlError } from "../src/types";
 import type { CrdtDocument } from "../src/crdt/document";
 import type { User } from "../src/types";
@@ -339,11 +340,14 @@ describe("intra-group writes are permitted", () => {
 
 describe("view update after write", () => {
   it("test member adding a child to a test node is visible to test manager but not dev member", () => {
-    putOperation(crdt, userById("u-test-member"), {
-      type: "addNode",
-      parentId: "node-test-plan",
-      title: "冒烟测试用例"
-    });
+    applyFullDocOperation(
+      crdt,
+      putOperation(crdt, userById("u-test-member"), {
+        type: "addNode",
+        parentId: "node-test-plan",
+        title: "冒烟测试用例"
+      })
+    );
 
     const testManagerTitles = collectTitles(
       getView(crdt, userById("u-test-manager")).roots
@@ -357,11 +361,14 @@ describe("view update after write", () => {
   });
 
   it("dev member adding a child to a dev node is visible to dev manager but not test member", () => {
-    putOperation(crdt, userById("u-dev-member"), {
-      type: "addNode",
-      parentId: "node-dev-requirements",
-      title: "性能优化需求"
-    });
+    applyFullDocOperation(
+      crdt,
+      putOperation(crdt, userById("u-dev-member"), {
+        type: "addNode",
+        parentId: "node-dev-requirements",
+        title: "性能优化需求"
+      })
+    );
 
     const devManagerTitles = collectTitles(
       getView(crdt, userById("u-dev-manager")).roots
@@ -375,11 +382,14 @@ describe("view update after write", () => {
   });
 
   it("admin modifying a test node — test member sees change, dev member does not see the node", () => {
-    putOperation(crdt, userById("u-admin"), {
-      type: "updateContent",
-      nodeId: "node-test-bugs",
-      content: "管理员更新后的缺陷记录"
-    });
+    applyFullDocOperation(
+      crdt,
+      putOperation(crdt, userById("u-admin"), {
+        type: "updateContent",
+        nodeId: "node-test-bugs",
+        content: "管理员更新后的缺陷记录"
+      })
+    );
 
     // Test member's view of that node should show updated content
     const testView = getView(crdt, userById("u-test-member"));
