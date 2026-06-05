@@ -1,564 +1,445 @@
 export function renderHomePage(): string {
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
+
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>CRDT 隐私协同编辑器</title>
     <style>
-      :root {
-        color-scheme: light;
-        font-family: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif;
-        background: #f5f7fa;
-        color: #20242a;
-      }
+    :root {
+      --bg: #f5f7fb;
+      --surface: rgba(255,255,255,.78);
+      --surface-solid: #ffffff;
+      --surface-2: #eef3ff;
+      --text: #172033;
+      --muted: #68758e;
+      --line: rgba(83, 102, 135, .18);
+      --brand: #4f46e5;
+      --brand-2: #06b6d4;
+      --brand-3: #7c3aed;
+      --success: #16a34a;
+      --warning: #d97706;
+      --danger: #dc2626;
+      --shadow: 0 24px 70px rgba(35, 45, 90, .14);
+      --shadow-soft: 0 14px 42px rgba(35, 45, 90, .10);
+      --radius-xl: 28px;
+      --radius-lg: 22px;
+      --radius-md: 16px;
+      --radius-sm: 12px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    html[data-theme="dark"] {
+      --bg: #0b1020;
+      --surface: rgba(17, 24, 39, .78);
+      --surface-solid: #111827;
+      --surface-2: rgba(79, 70, 229, .13);
+      --text: #edf2ff;
+      --muted: #94a3b8;
+      --line: rgba(148, 163, 184, .20);
+      --shadow: 0 24px 70px rgba(0, 0, 0, .35);
+      --shadow-soft: 0 14px 42px rgba(0, 0, 0, .26);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--sans);
+      color: var(--text);
+      background:
+        radial-gradient(circle at 10% 0%, rgba(79,70,229,.20), transparent 34rem),
+        radial-gradient(circle at 92% 10%, rgba(6,182,212,.19), transparent 30rem),
+        radial-gradient(circle at 50% 100%, rgba(124,58,237,.12), transparent 34rem),
+        var(--bg);
+      overflow-x: hidden;
+    }
+    body.login-mode .app-mode-only { display: none !important; }
+    body.app-mode .login-screen { display: none !important; }
 
-      body {
-        margin: 0;
-      }
+    button, input, textarea, select { font: inherit; }
+    button {
+      border: 0; cursor: pointer;
+      transition: transform .16s ease, box-shadow .16s ease, background .16s ease, opacity .16s ease;
+    }
+    button:active { transform: translateY(1px) scale(.99); }
+    button:disabled { cursor: not-allowed; opacity: .46; transform: none; box-shadow: none; }
 
-      body.login-mode main {
-        display: none;
-      }
+    .glass {
+      background: var(--surface);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow-soft);
+    }
 
-      body.app-mode .login-screen {
-        display: none;
-      }
+    .topbar {
+      height: 72px; display: flex; align-items: center; justify-content: space-between;
+      gap: 16px; padding: 14px 24px; position: sticky; top: 0; z-index: 40;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--bg) 66%, transparent);
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-mark {
+      width: 42px; height: 42px; border-radius: 15px; display: grid; place-items: center;
+      color: white; background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      box-shadow: 0 14px 28px rgba(79,70,229,.26); font-weight: 900; letter-spacing: -.05em; font-size: 14px;
+    }
+    .brand-title { display: flex; flex-direction: column; line-height: 1.12; }
+    .brand-title strong { font-size: 15px; letter-spacing: -.02em; }
+    
+    .topbar-actions { display: flex; align-items: center; gap: 10px; }
 
-      header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        padding: 18px 28px 14px;
-        background: #ffffff;
-        border-bottom: 1px solid #dfe3ea;
-      }
+    .btn {
+      border-radius: 14px; padding: 10px 14px; background: var(--surface-solid); color: var(--text);
+      border: 1px solid var(--line); display: inline-flex; align-items: center; justify-content: center;
+      gap: 8px; min-height: 40px; box-shadow: 0 10px 20px rgba(35,45,90,.06); text-decoration: none;
+    }
+    .btn:hover { box-shadow: 0 14px 28px rgba(35,45,90,.11); transform: translateY(-1px); }
+    .btn.primary { background: linear-gradient(135deg, var(--brand), var(--brand-2)); color: #fff; border-color: transparent; box-shadow: 0 16px 34px rgba(79,70,229,.25); }
+    .btn.danger { color: #fff; background: linear-gradient(135deg, #ef4444, #f97316); border-color: transparent; }
+    .btn.small { min-height: 32px; padding: 7px 10px; border-radius: 11px; font-size: 12px; }
+    .btn.secondary { background: var(--surface-solid); color: var(--brand); }
+    
+    .icon-btn {
+      width: 40px; height: 40px; border-radius: 14px; border: 1px solid var(--line);
+      color: var(--text); background: var(--surface-solid); box-shadow: 0 10px 20px rgba(35,45,90,.06);
+      display: grid; place-items: center;
+    }
+    
+    .user-pill {
+      display: flex; align-items: center; gap: 10px; padding: 7px 10px 7px 7px;
+      border-radius: 999px; border: 1px solid var(--line); background: var(--surface-solid);
+    }
+    .user-pill.hidden { display: none; }
+    .avatar {
+      width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+      color: white; font-weight: 800; background: linear-gradient(135deg, var(--brand), var(--brand-3));
+      box-shadow: inset 0 0 0 2px rgba(255,255,255,.22); flex: 0 0 auto;
+    }
 
-      h1 {
-        margin: 0;
-        font-size: 22px;
-        font-weight: 700;
-      }
+    .auth-page {
+      min-height: calc(100vh - 74px); display: grid; place-items: center; padding: 32px;
+    }
+    .auth-card {
+      border-radius: 26px; padding: 26px; width: min(100%, 480px);
+    }
+    .auth-card-head { display: grid; gap: 6px; margin-bottom: 20px; text-align: center; }
+    .auth-card-head h2 { margin: 0; font-size: 24px; line-height: 1.15; }
+    .auth-card-head p { margin: 0; color: var(--muted); font-size: 13px; }
 
-      h2 {
-        margin: 0 0 12px;
-        font-size: 17px;
-      }
+    .form-grid { display: grid; gap: 15px; }
+    .row { display: flex; gap: 10px; align-items: center; }
+    .hidden { display: none !important; }
+    
+    label { display: grid; gap: 8px; font-size: 13px; color: var(--muted); font-weight: 650; }
+    input, textarea, select {
+      width: 100%; color: var(--text); background: var(--surface-solid);
+      border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px;
+      outline: none; transition: border-color .16s ease, box-shadow .16s ease;
+      box-sizing: border-box;
+    }
+    select {
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2368758e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 36px;
+      cursor: pointer;
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color: color-mix(in srgb, var(--brand) 70%, white);
+      box-shadow: 0 0 0 4px rgba(79,70,229,.12);
+    }
+    
+    .hint { color: var(--muted); font-size: 12px; line-height: 1.6; }
 
-      main {
-        display: grid;
-        grid-template-columns: 320px minmax(0, 1fr);
-        gap: 20px;
-        padding: 20px 28px 28px;
-      }
+    .main {
+      flex: 1; display: grid; grid-template-columns: 300px minmax(0, 1fr);
+      gap: 22px; padding: 22px; min-height: calc(100vh - 72px);
+    }
+    .sidebar {
+      border-radius: var(--radius-xl); padding: 18px; display: flex; flex-direction: column; gap: 16px;
+      position: sticky; top: 94px; align-self: start;
+    }
+    .nav-section-title {
+      color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; margin: 6px 6px 0;
+    }
+    .mini-card {
+      border-radius: 20px; padding: 15px; background: var(--surface-solid); border: 1px solid var(--line);
+    }
+    .mini-card h4 { margin: 0 0 8px; font-size: 13px; }
+    .demo-account-list { display: grid; gap: 9px; }
+    .demo-account-list div { display: grid; gap: 2px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px;}
+    .demo-account-list div:last-child { border-bottom: 0; padding-bottom: 0; }
+    .demo-account-list strong { font-size: 12px; color: var(--muted); }
+    
+    .nav-list { display: grid; gap: 8px; }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 16px;
+      color: var(--muted); border: 1px solid transparent; background: transparent; text-align: left; width: 100%;
+    }
+    .nav-item:hover {
+      color: var(--text); background: var(--surface-solid); border-color: var(--line); box-shadow: 0 10px 22px rgba(35,45,90,.06);
+    }
 
-      section {
-        min-width: 0;
-      }
+    .content { min-width: 0; display: flex; flex-direction: column; gap: 18px; justify-content: flex-start; }
+    .employee-work-grid { display: flex; flex-direction: row; gap: 24px; align-items: flex-start; }
+    .employee-table-card { flex: 1; min-width: 0; }
+    .employee-log-card { width: 320px; flex-shrink: 0; }
+    .section-card { border-radius: var(--radius-xl); padding: 32px; }
+    .section-head.compact { margin-bottom: 24px; }
+    .section-head h3 { margin: 0 0 6px; font-size: 20px; letter-spacing: -.03em; }
+    .section-head p { margin: 0; color: var(--muted); line-height: 1.6; font-size: 13px; }
+    
+    .employee-log-section { display: grid; gap: 10px; margin-top: 16px; }
+    .employee-log-section h4 { margin: 0; font-size: 13px; color: var(--muted); }
+    .log-empty {
+      border: 1px dashed var(--line); border-radius: 14px; padding: 14px; color: var(--muted);
+      font-size: 12px; background: color-mix(in srgb, var(--surface-solid) 75%, transparent);
+    }
 
-      .login-screen {
-        min-height: calc(100vh - 74px);
-        display: grid;
-        place-items: center;
-        padding: 24px;
-      }
-
-      .login-panel {
-        width: min(440px, 100%);
-        background: #ffffff;
-        border: 1px solid #dfe3ea;
-        border-radius: 8px;
-        padding: 22px;
-        box-shadow: 0 12px 32px rgba(31, 41, 55, 0.08);
-      }
-
-      .login-title {
-        margin: 0 0 6px;
-        font-size: 21px;
-      }
-
-      .login-copy {
-        margin: 0 0 18px;
-        color: #667085;
-        line-height: 1.5;
-      }
-
-      .panel {
-        background: #ffffff;
-        border: 1px solid #dfe3ea;
-        border-radius: 8px;
-        padding: 16px;
-      }
-
-      label {
-        display: block;
-        margin-bottom: 8px;
+    /* Node & Tree CSS */
+    .tree { margin: 0; padding-left: 0; list-style: none; }
+    .tree ul { margin: 8px 0 0 18px; padding-left: 14px; border-left: 1px solid var(--line); list-style: none; }
+    .node {
+      margin: 12px 0; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-solid);
+      box-shadow: var(--shadow-soft);
+    }
+    .node-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .node-title strong { overflow-wrap: anywhere; font-size: 15px; }
+    .node-title input { flex: 1; min-width: 0; font-weight: 700; font-size: 15px; }
+    .node-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .node-actions button { width: auto; padding: 6px 12px; font-size: 12px; }
+    
+    .meta { margin-top: 6px; font-size: 12px; color: var(--muted); }
+    .node-content { margin-top: 8px; white-space: pre-wrap; color: var(--text); font-size: 14px; line-height: 1.6; }
+    .node textarea { margin-top: 8px; min-height: 82px; resize: vertical; }
+    
+    .node-policy { display: grid; gap: 6px; margin-top: 10px; max-width: 260px; }
+    .multi-select { position: relative; display: block; }
+    .multi-select summary {
+      box-sizing: border-box; width: 100%; min-height: 44px; border: 1px solid var(--line);
+      border-radius: 16px; padding: 12px 14px; background: var(--surface-solid); color: var(--text);
+      cursor: pointer; list-style: none; font-size: 13px;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2368758e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 36px;
+    }
+    .multi-select summary:hover {
+       border-color: var(--line);
+       box-shadow: 0 10px 22px rgba(35,45,90,.06);
+    }
+    .multi-select summary:focus {
+      border-color: color-mix(in srgb, var(--brand) 70%, white);
+      box-shadow: 0 0 0 4px rgba(79,70,229,.12);
+    }
+    .multi-select summary::-webkit-details-marker { display: none; }
+    .multi-select-menu {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20; display: grid; gap: 2px;
+      max-height: 220px; overflow: auto; padding: 6px; border: 1px solid var(--line); border-radius: 16px;
+      background: var(--surface-solid); box-shadow: 0 12px 28px rgba(31, 41, 55, 0.14);
+    }
+    .multi-select-option {
+      width: 100%; border: 0; background: transparent; color: var(--text); display: flex; align-items: center;
+      justify-content: space-between; gap: 8px; padding: 7px 8px; font-size: 13px; font-weight: 500; text-align: left;
+      border-radius: 8px; cursor: pointer;
+    }
+    .multi-select-option:hover,
+    .multi-select-option:focus { background: var(--surface-2); color: var(--brand); }
+      .policy-select {
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2368758e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+        padding-right: 36px;
+        cursor: pointer;
+        min-height: 44px;
         font-size: 13px;
-        color: #535b66;
-      }
-
-      select,
-      input,
-      textarea,
-      button {
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background-color: var(--surface-solid);
         width: 100%;
         box-sizing: border-box;
-        border: 1px solid #cbd2dc;
-        border-radius: 6px;
-        padding: 9px 10px;
-        font: inherit;
       }
-
-      textarea {
-        min-height: 78px;
-        resize: vertical;
+      .policy-select:hover {
+         border-color: var(--line);
+         box-shadow: 0 10px 22px rgba(35,45,90,.06);
       }
-
-      button {
-        cursor: pointer;
-        border-color: #1f6feb;
-        background: #1f6feb;
-        color: #ffffff;
-        font-weight: 650;
+      .policy-select:focus {
+        border-color: color-mix(in srgb, var(--brand) 70%, white);
+        box-shadow: 0 0 0 4px rgba(79,70,229,.12);
       }
+    .multi-select-check { color: var(--brand); font-weight: 800; }
 
-      button:disabled {
-        cursor: not-allowed;
-        border-color: #cbd2dc;
-        background: #e8ecf2;
-        color: #7b8494;
-      }
+    .modal {
+      position: fixed; inset: 0; display: grid; place-items: center; padding: 20px;
+      background: rgba(15, 23, 42, 0.45); z-index: 50;
+    }
+    .modal.hidden { display: none !important; }
+    .modal-card {
+      position: relative; width: min(720px, 100%); background: var(--surface-solid);
+      border-radius: 24px; border: 1px solid var(--line); padding: 24px;
+      box-shadow: var(--shadow); color: var(--text);
+    }
+    .modal-title { margin: 0 0 8px; font-size: 20px; }
+    .modal-copy { margin: 0 0 16px; color: var(--muted); line-height: 1.6; font-size: 14px; }
+    .modal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+    .modal-list {
+      margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px;
+      background: var(--surface-2); max-height: 180px; overflow: auto; white-space: pre-wrap;
+      color: var(--text); font-size: 13px;
+    }
+    .modal-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; justify-content: flex-end; }
+    .modal-actions button { width: auto; min-width: 108px; }
 
-      button.secondary {
-        background: #ffffff;
-        color: #1f6feb;
-      }
-
-      button.danger {
-        border-color: #c2410c;
-        background: #c2410c;
-      }
-
-      .session-chip {
-        display: inline-flex;
-        align-items: center;
-        min-height: 34px;
-        padding: 0 10px;
-        border: 1px solid #dfe3ea;
-        border-radius: 6px;
-        background: #f8fafc;
-        color: #303741;
-        font-size: 13px;
-      }
-
-      .stack {
-        display: grid;
-        gap: 12px;
-      }
-
-      .toolbar {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 8px;
-      }
-
-      .tree {
-        margin: 0;
-        padding-left: 0;
-        list-style: none;
-      }
-
-      .tree ul {
-        margin: 8px 0 0 18px;
-        padding-left: 14px;
-        border-left: 1px solid #dfe3ea;
-        list-style: none;
-      }
-
-      .node {
-        margin: 8px 0;
-        padding: 10px;
-        border: 1px solid #e1e5ec;
-        border-radius: 8px;
-        background: #fbfcfe;
-      }
-
-      .node-title {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-      }
-
-      .node-title strong {
-        overflow-wrap: anywhere;
-      }
-
-      .node-title input {
-        flex: 1;
-        min-width: 0;
-        font-weight: 700;
-      }
-
-      .node-actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-top: 10px;
-      }
-
-        .node-actions button {
-        width: auto;
-        padding: 6px 9px;
-        font-size: 12px;
-      }
-
-      .node-policy {
-        display: grid;
-        gap: 6px;
-        margin-top: 10px;
-        max-width: 260px;
-      }
-
-      .multi-select {
-        position: relative;
-        display: grid;
-        gap: 6px;
-      }
-
-      .multi-select summary {
-        box-sizing: border-box;
-        width: 100%;
-        min-height: 38px;
-        border: 1px solid #cbd2dc;
-        border-radius: 6px;
-        padding: 9px 10px;
-        background: #ffffff;
-        color: #20242a;
-        cursor: pointer;
-        list-style: none;
-      }
-
-      .multi-select summary::-webkit-details-marker {
-        display: none;
-      }
-
-      .multi-select-menu {
-        position: absolute;
-        top: calc(100% + 4px);
-        left: 0;
-        right: 0;
-        z-index: 20;
-        display: grid;
-        gap: 2px;
-        max-height: 220px;
-        overflow: auto;
-        padding: 6px;
-        border: 1px solid #cbd2dc;
-        border-radius: 6px;
-        background: #ffffff;
-        box-shadow: 0 12px 28px rgba(31, 41, 55, 0.14);
-      }
-
-      .multi-select-option {
-        width: 100%;
-        border: 0;
-        background: transparent;
-        color: #20242a;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        padding: 7px 8px;
-        font-size: 13px;
-        font-weight: 500;
-        text-align: left;
-      }
-
-      .multi-select-option:hover {
-        background: #f1f5f9;
-      }
-
-      .multi-select-check {
-        color: #1f6feb;
-        font-weight: 800;
-      }
-
-      .meta {
-        margin-top: 6px;
-        font-size: 12px;
-        color: #667085;
-      }
-
-      .content {
-        margin-top: 8px;
-        white-space: pre-wrap;
-        color: #303741;
-      }
-
-      .node textarea {
-        margin-top: 8px;
-        min-height: 82px;
-      }
-
-      .status {
-        min-height: 20px;
-        font-size: 13px;
-        color: #535b66;
-        white-space: pre-wrap;
-      }
-
-      .modal {
-        position: fixed;
-        inset: 0;
-        display: grid;
-        place-items: center;
-        padding: 20px;
-        background: rgba(15, 23, 42, 0.45);
-        z-index: 50;
-      }
-
-      .hidden {
-        display: none !important;
-      }
-        
-      .modal.hidden {
-        display: none !important;
-      }
-
-      .modal-card {
-        position: relative;
-        width: min(720px, 100%);
-        background: #ffffff;
-        border-radius: 8px;
-        border: 1px solid #dfe3ea;
-        padding: 18px;
-        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.24);
-      }
-
-      .modal-title {
-        margin: 0 0 8px;
-        font-size: 18px;
-      }
-
-      .modal-copy {
-        margin: 0 0 12px;
-        color: #535b66;
-        line-height: 1.5;
-      }
-
-      .modal-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-        margin-top: 12px;
-      }
-
-      .modal-list {
-        margin: 0;
-        padding: 10px 12px;
-        border: 1px solid #e1e5ec;
-        border-radius: 8px;
-        background: #fbfcfe;
-        max-height: 180px;
-        overflow: auto;
-        white-space: pre-wrap;
-        color: #303741;
-        font-size: 13px;
-      }
-
-      .modal-actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-top: 16px;
-        justify-content: flex-end;
-      }
-
-      .modal-actions button {
-        width: auto;
-        min-width: 108px;
-      }
-
-      .sync-state {
-        display: grid;
-        gap: 6px;
-        padding: 10px;
-        border: 1px solid #e1e5ec;
-        border-radius: 8px;
-        background: #fbfcfe;
-        font-size: 13px;
-        color: #535b66;
-      }
-
-      .sync-state strong {
-        color: #20242a;
-      }
-
-      .hint {
-        font-size: 12px;
-        color: #667085;
-      }
-
-      .admin-panel.hidden {
-        display: none;
-      }
-
-      .user-table-wrap {
-        overflow-x: auto;
-      }
-
-      .user-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 13px;
-      }
-
-      .user-table th,
-      .user-table td {
-        padding: 8px 6px;
-        border-bottom: 1px solid #e1e5ec;
-        text-align: left;
-        vertical-align: middle;
-        white-space: nowrap;
-      }
-
-      .user-table th {
-        color: #535b66;
-        font-weight: 650;
-      }
-
-      .user-table select {
-        min-width: 112px;
-      }
-
-      .user-table button {
-        width: auto;
-        padding: 6px 9px;
-        font-size: 12px;
-      }
-
-      @media (max-width: 900px) {
-        main {
-          grid-template-columns: 1fr;
-          padding: 16px;
-        }
-
-        header {
-          align-items: stretch;
-          flex-direction: column;
-        }
-
-      }
+    @media (max-width: 900px) {
+      .main { grid-template-columns: 1fr; padding: 16px; }
+      .employee-work-grid { flex-direction: column; }
+      .employee-log-card { width: 100%; }
+      .topbar { flex-direction: column; height: auto; align-items: stretch; }
+    }
     </style>
   </head>
   <body class="login-mode">
-    <header>
-      <h1>CRDT 隐私协同编辑器</h1>
-      <div class="session-chip" id="headerSession">未登录</div>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" style="font-size: 14px;">CRDT</div>
+        <div class="brand-title">
+          <strong>CRDT 隐私协同编辑器</strong>
+        </div>
+      </div>
+      <div class="topbar-center">
+      </div>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="themeToggle" title="切换主题" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; this.textContent = document.documentElement.dataset.theme === 'dark' ? '☀' : '☾';">☾</button>
+        <div class="user-pill app-mode-only" id="headerUserPill">
+          <span class="avatar">U</span>
+          <span class="small-text strong" id="headerSession">未登录</span>
+        </div>
+        <button class="btn small app-mode-only" id="logout">退出</button>
+      </div>
     </header>
 
-    <div class="login-screen">
-      <section class="login-panel stack">
-        <h2 class="login-title">登录协同空间</h2>
-        <p class="login-copy">请输入用户名和密码登录。也可以注册普通访客账号。</p>
+    <div class="login-screen auth-page">
+      <section class="auth-card glass" id="loginPanelContainer">
+        <div class="auth-card-head">
+          <h2>登录协同空间</h2>
+          <p>请输入用户名和密码登录。也可以注册普通访客账号。</p>
+        </div>
+        <div id="loginPanel" class="form-grid">
+           <label>用户名 <input id="loginUsername" autocomplete="username" placeholder="例如：admin" /></label>
+           <label>密码 <input id="loginPassword" type="password" autocomplete="current-password" placeholder="请输入密码" /></label>
+           <div class="row">
+             <button id="login" class="btn primary">登录</button>
+             <button id="showRegister" class="btn secondary" type="button">注册账号</button>
+           </div>
+           <div class="hint" style="grid-column: 1 / -1;">
+            测试账号：管理员 admin / admin123；研发经理 manager / manager123；研发人员 member / member123；访客 guest / guest123。
+           </div>
+        </div>
 
-        <div id="loginPanel" class="stack">
-          <div>
-            <label for="loginUsername">用户名</label>
-            <input id="loginUsername" autocomplete="username" placeholder="例如：admin" />
-          </div>
-          <div>
-            <label for="loginPassword">密码</label>
-            <input id="loginPassword" type="password" autocomplete="current-password" placeholder="请输入密码" />
-          </div>
-
-          <div class="toolbar">
-            <button id="login">登录</button>
-            <button id="showRegister" class="secondary" type="button">注册账号</button>
-          </div>
-
-          <div class="hint">
-            测试账号：
-            管理员 admin / admin123；
-            研发经理 manager / manager123；
-            研发人员 member / member123；
-            访客 guest / guest123。
+        <div id="registerPanel" class="form-grid hidden">
+          <label>用户名 <input id="registerUsername" autocomplete="username" /></label>
+          <label>显示名称 <input id="registerDisplayName" /></label>
+          <label>密码 <input id="registerPassword" type="password" autocomplete="new-password" /></label>
+          <label>确认密码 <input id="registerConfirmPassword" type="password" autocomplete="new-password" /></label>
+          <div class="row">
+            <button id="register" class="btn primary" type="button">提交注册</button>
+            <button id="hideRegister" class="btn secondary" type="button">取消</button>
           </div>
         </div>
 
-        <div id="registerPanel" class="stack hidden">
-          <div>
-            <label for="registerUsername">用户名</label>
-            <input id="registerUsername" autocomplete="username" />
-          </div>
-          <div>
-            <label for="registerDisplayName">显示名称</label>
-            <input id="registerDisplayName" />
-          </div>
-          <div>
-            <label for="registerPassword">密码</label>
-            <input id="registerPassword" type="password" autocomplete="new-password" />
-          </div>
-          <div>
-            <label for="registerConfirmPassword">确认密码</label>
-            <input id="registerConfirmPassword" type="password" autocomplete="new-password" />
-          </div>
-          <div class="toolbar">
-            <button id="register" type="button">提交注册</button>
-            <button id="hideRegister" class="secondary" type="button">取消</button>
-          </div>
-        </div>
-
-        <div class="status" id="loginStatus"></div>
+        <div class="status" id="loginStatus" style="margin-top: 16px; color: var(--muted); font-size: 13px;"></div>
       </section>
     </div>
 
-    <main>
-      <section class="stack">
-        <div class="panel stack">
-          <div class="sync-state">
-            <div>会话用户：<strong id="sessionUser">未登录</strong></div>
-            <div>策略版本：<strong id="policyVersion">-</strong></div>
-            <div>连接状态：<strong id="connectionState">未连接</strong></div>
-            <div>离线队列：<strong id="queueLength">0</strong></div>
+    <main class="main employee-main app-mode-only">
+      <aside class="sidebar glass">
+        <div class="nav-section-title">状态与控制</div>
+        
+        <div class="mini-card">
+          <h4>同步状态</h4>
+          <div class="demo-account-list">
+            <div><strong style="color:var(--text);">会话用户</strong> <span id="sessionUser" style="color:var(--muted);">未登录</span></div>
+            <div><strong style="color:var(--text);">策略版本</strong> <span id="policyVersion" style="color:var(--muted);">-</span></div>
+            <div><strong style="color:var(--text);">连接状态</strong> <span id="connectionState" style="color:var(--muted);">未连接</span></div>
+            <div><strong style="color:var(--text);">离线队列</strong> <span id="queueLength" style="color:var(--muted);">0</span></div>
           </div>
-          <div class="toolbar">
-            <button id="refresh" class="secondary">刷新视图</button>
-            <button id="connect" class="secondary">联网</button>
-          </div>
-          <div class="toolbar">
-            <button id="syncOffline" class="secondary">同步离线操作</button>
-            <button id="logout" class="secondary">登出</button>
-          </div>
-          <div class="status" id="status"></div>
         </div>
 
-        <div id="userManagement" class="panel stack admin-panel hidden" aria-hidden="true">
-          <h2>用户管理</h2>
-          <div class="user-table-wrap">
-            <table class="user-table">
+        <div class="nav-list">
+          <button class="nav-item" id="refresh"><span>⟳</span>刷新视图</button>
+          <button class="nav-item" id="connect"><span>⚡</span>联网</button>
+          <button class="nav-item" id="syncOffline"><span>↥</span>同步离线操作</button>
+        </div>
+        <div class="status" id="status" style="color: var(--muted); font-size: 12px; margin-top: 8px;"></div>
+
+      </aside>
+
+      <section class="content employee-content">
+        <div id="userManagement" class="section-card glass admin-panel hidden" aria-hidden="true" style="margin-bottom: 18px;">
+          <div class="section-head compact">
+            <div>
+              <h3>用户管理</h3>
+              <p>管理系统中的用户角色与部门权限。</p>
+            </div>
+          </div>
+          <div class="user-table-wrap" style="overflow-x: auto; margin-top: 8px;">
+            <table class="user-table" style="width: 100%; font-size: 13px; border-collapse: collapse; text-align: left;">
               <thead>
-                <tr>
-                  <th>显示名称</th>
-                  <th>用户名</th>
-                  <th>当前身份</th>
-                  <th>部门</th>
-                  <th>创建时间</th>
-                  <th>操作</th>
+                <tr style="border-bottom: 1px solid var(--line);">
+                  <th style="padding: 10px 14px; color: var(--muted); font-weight: 600;">显示名称</th>
+                  <th style="padding: 10px 14px; color: var(--muted); font-weight: 600;">用户名</th>
+                  <th style="padding: 10px 14px; color: var(--muted); font-weight: 600;">当前身份</th>
+                  <th style="padding: 10px 14px; color: var(--muted); font-weight: 600;">部门</th>
+                  <th style="padding: 10px 14px; color: var(--muted); font-weight: 600;">创建时间</th>
+                  <th style="padding: 10px 14px; color: var(--muted); font-weight: 600;">操作</th>
                 </tr>
               </thead>
               <tbody id="userRows"></tbody>
             </table>
           </div>
-          <div class="status" id="userManagementStatus"></div>
+          <div class="status" id="userManagementStatus" style="color: var(--muted); font-size: 12px; margin-top: 8px;"></div>
         </div>
-      </section>
 
-      <section class="stack">
-        <div class="panel">
-          <ul id="tree" class="tree"></ul>
+        <div class="employee-work-grid">
+          <section class="section-card glass employee-table-card">
+            <div class="section-head compact">
+              <div>
+                <h3>项目空间</h3>
+                <p>管理和查看协同树节点。</p>
+              </div>
+            </div>
+            <ul id="tree" class="tree"></ul>
+          </section>
+
+          <aside class="section-card glass employee-log-card">
+            <div class="section-head compact">
+              <div>
+                <h3>操作日志</h3>
+                <p>记录本地视图操作、同步状态和后端合并结果。</p>
+              </div>
+            </div>
+            
+            <div class="employee-log-section">
+              <h4>本地操作</h4>
+              <div id="localLogList">
+                <div class="log-empty">还没有本地编辑。</div>
+              </div>
+            </div>
+            
+            <div class="employee-log-section">
+              <h4>远端合并结果</h4>
+              <div id="remoteLogList">
+                <div class="log-empty">等待后端返回或 WebSocket 更新。</div>
+              </div>
+            </div>
+          </aside>
         </div>
       </section>
     </main>
@@ -569,18 +450,18 @@ export function renderHomePage(): string {
         <p id="deleteDialogCopy" class="modal-copy"></p>
         <div class="modal-grid">
           <div>
-            <label>其他用户可见节点</label>
+            <label style="color:var(--text);">其他用户可见节点</label>
             <div id="deleteDialogVisibleNodes" class="modal-list"></div>
           </div>
           <div>
-            <label>受影响用户</label>
+            <label style="color:var(--text);">受影响用户</label>
             <div id="deleteDialogUsers" class="modal-list"></div>
           </div>
         </div>
         <div class="modal-actions">
-          <button id="deleteDialogCancel" type="button" class="secondary">取消</button>
-          <button id="deleteDialogKeepChildren" type="button" class="secondary">保留子节点</button>
-          <button id="deleteDialogForce" type="button" class="danger">强制删除整棵树</button>
+          <button id="deleteDialogCancel" type="button" class="btn secondary">取消</button>
+          <button id="deleteDialogKeepChildren" type="button" class="btn secondary">保留子节点</button>
+          <button id="deleteDialogForce" type="button" class="btn danger">强制删除整棵树</button>
         </div>
       </div>
     </div>
@@ -590,12 +471,12 @@ export function renderHomePage(): string {
         <h2 id="noticeDialogTitle" class="modal-title">操作提示</h2>
         <p id="noticeDialogCopy" class="modal-copy"></p>
         <div class="modal-actions">
-          <button id="noticeDialogOk" type="button">确定</button>
+          <button id="noticeDialogOk" type="button" class="btn primary">确定</button>
         </div>
       </div>
     </div>
 
-    <script>
+<script>
       const state = {
         token: "",
         user: null,
@@ -611,7 +492,9 @@ export function renderHomePage(): string {
         offline: {
           connected: false,
           queue: loadStoredOfflineQueue()
-        }
+        },
+        localLog: [],
+        remoteLog: []
       };
 
       const els = {
@@ -652,7 +535,9 @@ export function renderHomePage(): string {
         noticeDialog: document.querySelector("#noticeDialog"),
         noticeDialogTitle: document.querySelector("#noticeDialogTitle"),
         noticeDialogCopy: document.querySelector("#noticeDialogCopy"),
-        noticeDialogOk: document.querySelector("#noticeDialogOk")
+        noticeDialogOk: document.querySelector("#noticeDialogOk"),
+        localLogList: document.querySelector("#localLogList"),
+        remoteLogList: document.querySelector("#remoteLogList")
       };
 
       const offlineStorageKey = "crdt-editor-offline-queue-v1";
@@ -840,6 +725,34 @@ export function renderHomePage(): string {
         connectWebSocket();
       }
 
+      function pushLog(kind, title, detail = "") {
+        const entry = {
+          title,
+          detail,
+          time: new Date().toLocaleTimeString("zh-CN", { hour12: false })
+        };
+        const target = kind === "remote" ? state.remoteLog : state.localLog;
+        target.unshift(entry);
+        if (target.length > 8) target.length = 8;
+      }
+
+      function renderLogs() {
+        function formatLog(entries, emptyText) {
+          if (!entries || entries.length === 0) {
+            return '<div class="log-empty">' + emptyText + '</div>';
+          }
+          return entries.map(entry => {
+            return '<div class="employee-log-item">' +
+              '<span>' + escapeHtml(entry.time) + '</span>' +
+              '<strong>' + escapeHtml(entry.title) + '</strong>' +
+              (entry.detail ? '<em>' + escapeHtml(entry.detail) + '</em>' : '') +
+              '</div>';
+          }).join('');
+        }
+        if (els.localLogList) els.localLogList.innerHTML = formatLog(state.localLog, "还没有本地编辑。");
+        if (els.remoteLogList) els.remoteLogList.innerHTML = formatLog(state.remoteLog, "等待后端返回或 WebSocket 更新。");
+      }
+
       function render() {
         const focus = captureEditorFocus();
         document.body.className = state.user ? "app-mode" : "login-mode";
@@ -853,6 +766,7 @@ export function renderHomePage(): string {
         els.tree.innerHTML = "";
         renderUserManagement();
         renderSyncState();
+        renderLogs();
         if (!state.view) return;
         for (const root of state.view.roots) {
           els.tree.appendChild(renderNode(root));
@@ -912,46 +826,50 @@ export function renderHomePage(): string {
 
       function renderRoleCell(user, adminCount) {
         const cell = document.createElement("td");
-        const roleSelect = document.createElement("select");
-        roleSelect.innerHTML =
-          '<option value="guest">访客</option>' +
-          '<option value="member">研发人员</option>' +
-          '<option value="manager">研发经理</option>' +
-          '<option value="admin">管理员</option>';
-        roleSelect.value = user.role;
-        roleSelect.disabled = user.role === "admin" && adminCount <= 1;
-        roleSelect.addEventListener("change", async () => {
-          const previousRole = user.role;
-          try {
-            await updateUserRole(user.id, roleSelect.value);
-          } catch (error) {
-            roleSelect.value = previousRole;
-            setUserManagementStatus(error.message);
-          }
-        });
-        cell.appendChild(roleSelect);
+        const roleSelect = createCustomSelect(
+          [
+            { value: "guest", label: "访客" },
+            { value: "member", label: "研发人员" },
+            { value: "manager", label: "研发经理" },
+            { value: "admin", label: "管理员" }
+          ],
+          user.role,
+          async (newValue) => {
+            const previousRole = user.role;
+            try {
+              await updateUserRole(user.id, newValue);
+            } catch (error) {
+              roleSelect.value = previousRole;
+              setUserManagementStatus(error.message);
+            }
+          },
+          user.role === "admin" && adminCount <= 1
+        );
+        cell.appendChild(roleSelect.element);
         return cell;
       }
 
       function renderDepartmentCell(user) {
         const cell = document.createElement("td");
-        const departmentSelect = document.createElement("select");
-        departmentSelect.innerHTML =
-          '<option value="all">all</option>' +
-          '<option value="dev">dev</option>' +
-          '<option value="external">external</option>' +
-          '<option value="finance">finance</option>';
-        departmentSelect.value = user.department;
-        departmentSelect.addEventListener("change", async () => {
-          const previousDepartment = user.department;
-          try {
-            await updateUserDepartment(user.id, departmentSelect.value);
-          } catch (error) {
-            departmentSelect.value = previousDepartment;
-            setUserManagementStatus(error.message);
+        const departmentSelect = createCustomSelect(
+          [
+            { value: "all", label: "all" },
+            { value: "dev", label: "dev" },
+            { value: "external", label: "external" },
+            { value: "finance", label: "finance" }
+          ],
+          user.department,
+          async (newValue) => {
+            const previousDepartment = user.department;
+            try {
+              await updateUserDepartment(user.id, newValue);
+            } catch (error) {
+              departmentSelect.value = previousDepartment;
+              setUserManagementStatus(error.message);
+            }
           }
-        });
-        cell.appendChild(departmentSelect);
+        );
+        cell.appendChild(departmentSelect.element);
         return cell;
       }
 
@@ -959,7 +877,7 @@ export function renderHomePage(): string {
         const cell = document.createElement("td");
         const deleteButton = document.createElement("button");
         deleteButton.type = "button";
-        deleteButton.className = "danger";
+        deleteButton.className = "btn small danger";
         deleteButton.textContent = "删除";
         deleteButton.disabled =
           user.id === state.user.id || (user.role === "admin" && adminCount <= 1);
@@ -1037,9 +955,8 @@ export function renderHomePage(): string {
             )
           );
           const operationPolicies = [editPolicy, addPolicy, deletePolicy];
-          visibilityPolicy.select.addEventListener("change", () =>
-            syncOperationAclControls(visibilityPolicy.select, operationPolicies)
-          );
+          visibilityPolicy.select.onChangeHook = () =>
+            syncOperationAclControls(visibilityPolicy.select, operationPolicies);
           syncOperationAclControls(visibilityPolicy.select, operationPolicies);
           policyPanel.appendChild(visibilityPolicy.element);
           policyPanel.appendChild(editPolicy.element);
@@ -1075,7 +992,7 @@ export function renderHomePage(): string {
           box.appendChild(contentInput);
         } else if (node.content) {
           const content = document.createElement("div");
-          content.className = "content";
+          content.className = "node-content";
           content.textContent = node.content;
           box.appendChild(content);
         }
@@ -1086,7 +1003,7 @@ export function renderHomePage(): string {
           if (node.permissions.canAddChild) {
             const addButton = document.createElement("button");
             addButton.type = "button";
-            addButton.className = "secondary";
+            addButton.className = "btn small secondary";
             addButton.textContent = "添加子节点";
             addButton.addEventListener("click", () => addChildNode(node.id).catch((error) => setStatus(error.message)));
             actions.appendChild(addButton);
@@ -1094,7 +1011,7 @@ export function renderHomePage(): string {
           if (node.permissions.canDelete) {
             const deleteButton = document.createElement("button");
             deleteButton.type = "button";
-            deleteButton.className = "danger";
+            deleteButton.className = "btn small danger";
             deleteButton.textContent = "删除";
             deleteButton.addEventListener("click", () =>
               deleteTreeNode(node.id).catch((error) => showNoticeDialog("操作失败", error.message))
@@ -1113,23 +1030,78 @@ export function renderHomePage(): string {
         return li;
       }
 
+      function createCustomSelect(optionsList, currentValue, onChange, disabled = false) {
+        const details = document.createElement("details");
+        details.className = "multi-select";
+        if (disabled) details.style.pointerEvents = "none";
+        if (disabled) details.style.opacity = "0.6";
+        
+        const summary = document.createElement("summary");
+        const menu = document.createElement("div");
+        menu.className = "multi-select-menu";
+        
+        let currentValueState = currentValue;
+
+        function renderMenu() {
+          const selectedOption = optionsList.find((opt) => opt.value === currentValueState);
+          summary.textContent = selectedOption ? selectedOption.label : "";
+          menu.innerHTML = "";
+          for (const opt of optionsList) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "multi-select-option";
+            btn.innerHTML = "<span>" + escapeHtml(opt.label) + "</span><span class=\\\"multi-select-check\\\">" + (currentValueState === opt.value ? "✓" : "") + "</span>";
+            btn.addEventListener("click", (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              if (disabled) return;
+              currentValueState = opt.value;
+              renderMenu();
+              details.open = false;
+              if (onChange) onChange(currentValueState);
+            });
+            menu.appendChild(btn);
+          }
+        }
+        
+        renderMenu();
+        details.appendChild(summary);
+        details.appendChild(menu);
+        
+        return {
+          element: details,
+          get value() { return currentValueState; },
+          set value(v) { currentValueState = v; renderMenu(); },
+          set disabled(d) { 
+            disabled = d; 
+            details.style.pointerEvents = d ? "none" : "auto";
+            details.style.opacity = d ? "0.6" : "1";
+          }
+        };
+      }
+
       function renderAclSelect(label, value, onChange) {
         const policy = document.createElement("label");
         policy.className = "node-policy";
         policy.textContent = label;
-        const audience = document.createElement("select");
-        audience.dataset.field = "audience";
-        audience.innerHTML =
-          '<option value="all">所有人</option>' +
-          '<option value="admin">仅管理员</option>' +
-          '<option value="admin-manager">管理员和研发经理</option>' +
-          '<option value="dev-team">管理员和研发团队</option>';
-        audience.value = value;
-        audience.addEventListener("change", () => onChange(audience.value));
-        policy.appendChild(audience);
+        const customSelect = createCustomSelect(
+          [
+            { value: "all", label: "所有人" },
+            { value: "admin", label: "仅管理员" },
+            { value: "admin-manager", label: "管理员和研发经理" },
+            { value: "dev-team", label: "管理员和研发团队" }
+          ],
+          value,
+          (val) => {
+             if (customSelect.onChangeHook) customSelect.onChangeHook(val);
+             onChange(val);
+          }
+        );
+        customSelect.element.dataset.field = "audience";
+        policy.appendChild(customSelect.element);
         return {
           element: policy,
-          select: audience
+          select: customSelect
         };
       }
 
@@ -1444,6 +1416,7 @@ export function renderHomePage(): string {
       }
 
       async function deleteTreeNode(nodeId) {
+        if (!window.confirm("确定要删除该节点吗？")) return;
         const impact = await requestJson("/api/delete-impact?nodeId=" + encodeURIComponent(nodeId));
         if (!impact.blocksSilentDelete) {
           await submitOperation({ type: "deleteNode", nodeId });
@@ -1635,12 +1608,19 @@ export function renderHomePage(): string {
         setStatus(message);
       }
 
-      async function submitOperation(operation) {
+      async function submitOperation(operation, customLogTitle) {
         if (!state.token) return setStatus("请先登录");
         const envelope = createEnvelope(operation);
         state.offline.queue.push(envelope);
         saveOfflineQueue();
         renderSyncState();
+        const logTitle = customLogTitle || (operation.type === "renameNode" ? "重命名节点" : 
+                         operation.type === "updateContent" ? "更新内容" : 
+                         operation.type === "addNode" ? "添加节点" : 
+                         operation.type === "deleteNode" || operation.type === "deleteNodeKeepChildren" ? "删除节点" : 
+                         operation.type === "updateAcl" ? "修改权限" : operation.type);
+        pushLog("local", logTitle, JSON.stringify(operation));
+        renderLogs();
         if (isSocketOpen()) {
           state.socket.send(JSON.stringify({ type: "operation", envelope }));
           setStatus("操作已发送，等待确认");
@@ -1674,9 +1654,12 @@ export function renderHomePage(): string {
 
         if (body.rejected && body.rejected.length > 0) {
           setStatus("同步完成，" + body.rejected.length + " 个操作被拒绝");
+          pushLog("remote", "离线队列同步部分失败", operations.length + " 个操作, " + body.rejected.length + " 拒绝");
         } else {
           setStatus("离线队列已同步");
+          pushLog("remote", "离线队列已同步", operations.length + " 个操作");
         }
+        renderLogs();
       }
 
       els.login.addEventListener("click", () => login().catch((error) => setLoginStatus(error.message)));
@@ -1758,6 +1741,7 @@ export function renderHomePage(): string {
             if (message.type === "operationApplied" && message.operationId) {
               removeQueuedOperations([message.operationId]);
             }
+            pushLog("remote", "远端视图已更新", message.type === "operationApplied" ? "已合并操作" : "接收到最新视图");
             refreshSession()
               .catch((error) => setStatus(error.message))
               .finally(() => {
