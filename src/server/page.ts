@@ -195,6 +195,27 @@ export function renderHomePage(): string {
     
     .employee-log-section { display: grid; gap: 10px; margin-top: 16px; }
     .employee-log-section h4 { margin: 0; font-size: 13px; color: var(--muted); }
+    .employee-log-list { display: grid; gap: 8px; }
+    .employee-log-item {
+      display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 8px;
+      padding: 10px 12px; border: 1px solid var(--line); border-left-width: 4px;
+      border-radius: 14px; background: color-mix(in srgb, var(--surface-solid) 86%, transparent);
+      box-shadow: 0 10px 20px rgba(35,45,90,.04);
+    }
+    .employee-log-item span {
+      color: var(--muted); font-family: var(--mono); font-size: 11px; line-height: 1.5;
+    }
+    .employee-log-item strong {
+      min-width: 0; color: var(--text); font-size: 12px; line-height: 1.45; font-weight: 800;
+      overflow-wrap: anywhere;
+    }
+    .employee-log-item em {
+      grid-column: 2; color: var(--muted); font-size: 11px; line-height: 1.45; font-style: normal;
+      overflow-wrap: anywhere;
+    }
+    .employee-log-item.local { border-left-color: var(--brand); }
+    .employee-log-item.remote { border-left-color: var(--brand-2); background: rgba(6,182,212,.08); }
+    .employee-log-item.failed { border-left-color: var(--danger); background: rgba(220,38,38,.08); }
     .log-empty {
       border: 1px dashed var(--line); border-radius: 14px; padding: 14px; color: var(--muted);
       font-size: 12px; background: color-mix(in srgb, var(--surface-solid) 75%, transparent);
@@ -675,6 +696,13 @@ export function renderHomePage(): string {
       };
 
       const offlineStorageKey = "crdt-editor-offline-queue-v1";
+      const operationLogLimit = 20;
+      const operationLogKeys = new Set();
+      const operationLogClassNames = {
+        local: "employee-log-item local",
+        remote: "employee-log-item remote",
+        failed: "employee-log-item failed"
+      };
       let deleteDialogResolver = null;
       let noticeDialogResolver = null;
 
@@ -859,32 +887,201 @@ export function renderHomePage(): string {
         connectWebSocket();
       }
 
-      function pushLog(kind, title, detail = "") {
-        const entry = {
-          title,
-          detail,
-          time: new Date().toLocaleTimeString("zh-CN", { hour12: false })
-        };
+      function appendOperationLog(entry) {
+        const kind = entry.kind || "local";
         const target = kind === "remote" ? state.remoteLog : state.localLog;
-        target.unshift(entry);
-        if (target.length > 8) target.length = 8;
+        const key = entry.key || "";
+        if (key && operationLogKeys.has(key)) return;
+
+        if (entry.coalesceKey) {
+          const existingIndex = target.findIndex((item) => item.coalesceKey === entry.coalesceKey);
+          if (existingIndex >= 0) {
+            const removed = target.splice(existingIndex, 1);
+            for (const item of removed) {
+              if (item.key) operationLogKeys.delete(item.key);
+            }
+          }
+        }
+
+        const normalized = {
+          kind,
+          title: entry.title || "记录操作",
+          detail: entry.detail || "",
+          time: entry.time || new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+          createdAt: entry.createdAt || Date.now(),
+          key,
+          coalesceKey: entry.coalesceKey || ""
+        };
+        target.unshift(normalized);
+        if (key) operationLogKeys.add(key);
+        if (target.length > operationLogLimit) {
+          const removed = target.splice(operationLogLimit);
+          for (const item of removed) {
+            if (item.key) operationLogKeys.delete(item.key);
+          }
+        }
       }
 
-      function renderLogs() {
+      function renderOperationLogs() {
         function formatLog(entries, emptyText) {
           if (!entries || entries.length === 0) {
             return '<div class="log-empty">' + emptyText + '</div>';
           }
-          return entries.map(entry => {
-            return '<div class="employee-log-item">' +
+          const rows = entries.slice().sort((left, right) => (right.createdAt || 0) - (left.createdAt || 0));
+          return '<div class="employee-log-list">' + rows.map(entry => {
+            const className = operationLogClassNames[entry.kind] || operationLogClassNames.local;
+            return '<div class="' + escapeHtml(className) + '">' +
               '<span>' + escapeHtml(entry.time) + '</span>' +
               '<strong>' + escapeHtml(entry.title) + '</strong>' +
               (entry.detail ? '<em>' + escapeHtml(entry.detail) + '</em>' : '') +
               '</div>';
-          }).join('');
+          }).join('') + '</div>';
         }
         if (els.localLogList) els.localLogList.innerHTML = formatLog(state.localLog, "还没有本地编辑。");
         if (els.remoteLogList) els.remoteLogList.innerHTML = formatLog(state.remoteLog, "等待后端返回或 WebSocket 更新。");
+      }
+
+      function findViewNodeById(nodeId, nodes) {
+        if (!nodeId) return null;
+        for (const node of nodes || []) {
+          if (node.id === nodeId) return node;
+          const found = findViewNodeById(nodeId, node.children || []);
+          if (found) return found;
+        }
+        return null;
+      }
+
+      function resolveNodeTitle(nodeId) {
+        const draft = state.editing.drafts[nodeId];
+        if (draft && draft.title) return draft.title;
+        const node = state.view ? findViewNodeById(nodeId, state.view.roots) : null;
+        return node && node.title ? node.title : nodeId || "未知节点";
+      }
+
+      function quotedNodeTitle(value) {
+        return "「" + (value || "未知节点") + "」";
+      }
+
+      function targetNodeIdFromOperation(operation) {
+        return operation.nodeId || operation.parentId || operation.targetNodeId || "";
+      }
+
+      function formatViewOperation(operation, customLogTitle) {
+        if (!operation || !operation.type) {
+          return { title: customLogTitle || "执行未知操作", detail: "" };
+        }
+
+        const targetNodeId = targetNodeIdFromOperation(operation);
+        const targetTitle = resolveNodeTitle(targetNodeId);
+        const target = quotedNodeTitle(targetTitle);
+
+        if (customLogTitle) {
+          return { title: customLogTitle, detail: targetNodeId ? "目标节点 " + target : "" };
+        }
+
+        if (operation.type === "updateContent") {
+          return {
+            title: "修改节点「" + targetTitle + "」内容",
+            detail: "内容已更新"
+          };
+        }
+
+        if (operation.type === "addNode" || operation.type === "insertNode") {
+          const childTitle = operation.title || "新节点";
+          const parentTitle = resolveNodeTitle(operation.parentId);
+          return {
+            title: "新增子节点「" + childTitle + "」",
+            detail: operation.parentId ? "父节点 " + quotedNodeTitle(parentTitle) : ""
+          };
+        }
+
+        if (operation.type === "deleteNode") {
+          return {
+            title: "删除节点" + target,
+            detail: operation.confirmedImpact ? "已确认删除影响" : ""
+          };
+        }
+
+        if (operation.type === "deleteNodeKeepChildren") {
+          return {
+            title: "删除节点" + target,
+            detail: "保留子节点"
+          };
+        }
+
+        if (operation.type === "renameNode" || operation.type === "updateTitle") {
+          const nextTitle = operation.title || operation.newTitle || "";
+          return {
+            title: "重命名节点" + target,
+            detail: nextTitle ? "新名称 " + quotedNodeTitle(nextTitle) : ""
+          };
+        }
+
+        if (operation.type === "updateAcl") {
+          return {
+            title: "调整节点" + target + "权限",
+            detail: "访问策略已更新"
+          };
+        }
+
+        return {
+          title: "执行操作「" + operation.type + "」",
+          detail: targetNodeId ? "目标节点 " + target : "已记录操作摘要"
+        };
+      }
+
+      function operationFailurePrefix(operation) {
+        if (!operation || !operation.type) return "操作失败：";
+        if (operation.type === "deleteNode" || operation.type === "deleteNodeKeepChildren") return "删除失败：";
+        if (operation.type === "addNode" || operation.type === "insertNode") return "新增失败：";
+        if (operation.type === "renameNode" || operation.type === "updateTitle") return "重命名失败：";
+        if (operation.type === "updateContent") return "修改失败：";
+        if (operation.type === "updateAcl") return "权限更新失败：";
+        return "操作失败：";
+      }
+
+      function formatOperationFailure(operation, error) {
+        const reason = error && error.message ? error.message : String(error || "未知原因");
+        const summary = formatViewOperation(operation);
+        return {
+          kind: "failed",
+          title: operationFailurePrefix(operation) + reason,
+          detail: summary.title,
+          coalesceKey: "failed:" + (operation ? operation.type : "unknown") + ":" + targetNodeIdFromOperation(operation || {}) + ":" + reason
+        };
+      }
+
+      function logOperationFailure(operation, error) {
+        appendOperationLog(formatOperationFailure(operation, error));
+        renderOperationLogs();
+      }
+
+      function findQueuedEnvelope(operationId, queue) {
+        if (!operationId) return null;
+        return (queue || state.offline.queue).find((envelope) => envelope.id === operationId) || null;
+      }
+
+      function formatRemoteOperationMessage(message, envelope) {
+        if (message.type === "operationApplied") {
+          const summary = envelope && envelope.operation ? formatViewOperation(envelope.operation) : null;
+          return {
+            kind: "remote",
+            title: "服务端已合并本地操作",
+            detail: message.deduplicated
+              ? "重复操作已跳过"
+              : summary
+                ? summary.title
+                : "本地队列已确认",
+            key: "remote:applied:" + (message.operationId || message.stateVector || Date.now())
+          };
+        }
+
+        return {
+          kind: "remote",
+          title: "收到远端视图更新",
+          detail: "协同视图已刷新",
+          key: "remote:view:" + (message.stateVector || Date.now())
+        };
       }
 
       function render() {
@@ -900,7 +1097,7 @@ export function renderHomePage(): string {
         els.tree.innerHTML = "";
         renderUserManagement();
         renderSyncState();
-        renderLogs();
+        renderOperationLogs();
         if (!state.view) return;
         for (const root of state.view.roots) {
           els.tree.appendChild(renderNode(root, 0));
@@ -1268,7 +1465,12 @@ export function renderHomePage(): string {
             addButton.type = "button";
             addButton.className = "btn small secondary";
             addButton.textContent = "添加子节点";
-            addButton.addEventListener("click", () => addChildNode(node.id).catch((error) => setStatus(error.message)));
+            addButton.addEventListener("click", () =>
+              addChildNode(node.id).catch((error) => {
+                logOperationFailure({ type: "addNode", parentId: node.id, title: "子节点" }, error);
+                setStatus(error.message);
+              })
+            );
             actions.appendChild(addButton);
           }
           if (node.permissions.canDelete) {
@@ -1277,7 +1479,10 @@ export function renderHomePage(): string {
             deleteButton.className = "btn small danger";
             deleteButton.textContent = "删除";
             deleteButton.addEventListener("click", () =>
-              deleteTreeNode(node.id).catch((error) => showNoticeDialog("操作失败", error.message))
+              deleteTreeNode(node.id).catch((error) => {
+                logOperationFailure({ type: "deleteNode", nodeId: node.id }, error);
+                showNoticeDialog("操作失败", error.message);
+              })
             );
             actions.appendChild(deleteButton);
           }
@@ -1698,7 +1903,9 @@ export function renderHomePage(): string {
         }
 
         if (!impact.canResolveConflict) {
-          await showNoticeDialog("删除被拒绝", formatDeleteRejectedMessage(impact));
+          const rejectedMessage = formatDeleteRejectedMessage(impact);
+          logOperationFailure({ type: "deleteNode", nodeId }, new Error(rejectedMessage));
+          await showNoticeDialog("删除被拒绝", rejectedMessage);
           return;
         }
 
@@ -1887,13 +2094,14 @@ export function renderHomePage(): string {
         state.offline.queue.push(envelope);
         saveOfflineQueue();
         renderSyncState();
-        const logTitle = customLogTitle || (operation.type === "renameNode" ? "重命名节点" : 
-                         operation.type === "updateContent" ? "更新内容" : 
-                         operation.type === "addNode" ? "添加节点" : 
-                         operation.type === "deleteNode" || operation.type === "deleteNodeKeepChildren" ? "删除节点" : 
-                         operation.type === "updateAcl" ? "修改权限" : operation.type);
-        pushLog("local", logTitle, JSON.stringify(operation));
-        renderLogs();
+        const summary = formatViewOperation(operation, customLogTitle);
+        appendOperationLog({
+          kind: "local",
+          title: summary.title,
+          detail: summary.detail,
+          coalesceKey: "local:" + operation.type + ":" + targetNodeIdFromOperation(operation)
+        });
+        renderOperationLogs();
         if (isSocketOpen()) {
           state.socket.send(JSON.stringify({ type: "operation", envelope }));
           setStatus("操作已发送，等待确认");
@@ -1927,12 +2135,31 @@ export function renderHomePage(): string {
 
         if (body.rejected && body.rejected.length > 0) {
           setStatus("同步完成，" + body.rejected.length + " 个操作被拒绝");
-          pushLog("remote", "离线队列同步部分失败", operations.length + " 个操作, " + body.rejected.length + " 拒绝");
+          appendOperationLog({
+            kind: "remote",
+            title: "离线队列同步部分完成",
+            detail: operations.length + " 个操作中 " + body.rejected.length + " 个被拒绝",
+            key: "remote:batch-partial:" + operations.map((envelope) => envelope.id).join("|")
+          });
+          for (const rejected of body.rejected) {
+            const envelope = findQueuedEnvelope(rejected.id, operations);
+            const failure = formatOperationFailure(
+              envelope ? envelope.operation : null,
+              rejected.error && rejected.error.message ? rejected.error : "服务器拒绝该操作"
+            );
+            failure.key = "failed:batch:" + (rejected.id || failure.title);
+            appendOperationLog(failure);
+          }
         } else {
           setStatus("离线队列已同步");
-          pushLog("remote", "离线队列已同步", operations.length + " 个操作");
+          appendOperationLog({
+            kind: "remote",
+            title: "服务端已合并本地操作",
+            detail: operations.length + " 个离线操作已确认",
+            key: "remote:batch:" + operations.map((envelope) => envelope.id).join("|")
+          });
         }
-        renderLogs();
+        renderOperationLogs();
       }
 
       els.login.addEventListener("click", () => login().catch((error) => setLoginStatus(error.message)));
@@ -2008,13 +2235,17 @@ export function renderHomePage(): string {
         socket.onmessage = (event) => {
           const message = JSON.parse(event.data);
           if (message.type === "view" || message.type === "operationApplied") {
+            const appliedEnvelope = message.type === "operationApplied"
+              ? findQueuedEnvelope(message.operationId)
+              : null;
             state.view = message.view;
             state.stateVector = message.stateVector || state.stateVector;
             state.policyVersion = message.policyVersion || state.policyVersion;
             if (message.type === "operationApplied" && message.operationId) {
               removeQueuedOperations([message.operationId]);
             }
-            pushLog("remote", "远端视图已更新", message.type === "operationApplied" ? "已合并操作" : "接收到最新视图");
+            appendOperationLog(formatRemoteOperationMessage(message, appliedEnvelope));
+            renderOperationLogs();
             refreshSession()
               .catch((error) => setStatus(error.message))
               .finally(() => {
@@ -2022,7 +2253,16 @@ export function renderHomePage(): string {
                 setStatus("WebSocket 已更新视图");
               });
           }
-          if (message.type === "error") setStatus(message.error.message);
+          if (message.type === "error") {
+            appendOperationLog({
+              kind: "failed",
+              title: "操作失败：" + message.error.message,
+              detail: "服务端返回错误",
+              coalesceKey: "failed:socket:" + message.error.message
+            });
+            renderOperationLogs();
+            setStatus(message.error.message);
+          }
         };
         socket.onopen = async () => {
           if (state.socket !== socket) return;
