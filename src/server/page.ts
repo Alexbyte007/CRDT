@@ -200,24 +200,146 @@ export function renderHomePage(): string {
       font-size: 12px; background: color-mix(in srgb, var(--surface-solid) 75%, transparent);
     }
 
-    /* Node & Tree CSS */
-    .tree { margin: 0; padding-left: 0; list-style: none; }
-    .tree ul { margin: 8px 0 0 18px; padding-left: 14px; border-left: 1px solid var(--line); list-style: none; }
-    .node {
-      margin: 12px 0; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-solid);
-      box-shadow: var(--shadow-soft);
+    /* Hybrid Tree Workspace */
+    .tree {
+      margin: 0; padding: 8px 0 0; list-style: none;
+      position: relative;
     }
-    .node-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .node-title strong { overflow-wrap: anywhere; font-size: 15px; }
-    .node-title input { flex: 1; min-width: 0; font-weight: 700; font-size: 15px; }
-    .node-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .tree-workspace {
+      display: grid; gap: 0;
+    }
+    .tree ul {
+      margin: 0; padding-left: 0; list-style: none;
+    }
+    .tree-item {
+      position: relative; padding-left: calc(var(--depth, 0) * 34px);
+    }
+    .tree-item::before {
+      content: ""; position: absolute; left: calc(var(--depth, 0) * 34px + 17px);
+      top: 0; bottom: 0; width: 2px;
+      background: linear-gradient(180deg, rgba(79,70,229,.25), rgba(6,182,212,.12));
+      border-radius: 999px;
+    }
+    .tree-item:last-child::before { bottom: calc(100% - 38px); }
+    .tree-branch {
+      position: absolute; left: calc(var(--depth, 0) * 34px + 17px); top: 37px;
+      width: 28px; height: 2px; border-radius: 999px;
+      background: linear-gradient(90deg, rgba(79,70,229,.35), rgba(6,182,212,.18));
+    }
+    .node-shell {
+      position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr);
+      gap: 12px; padding: 8px 0 8px 0;
+    }
+    .tree-toggle {
+      width: 32px; height: 32px; margin-top: 13px; border-radius: 12px;
+      border: 1px solid var(--line); background: var(--surface-solid); color: var(--brand);
+      display: grid; place-items: center; box-shadow: 0 10px 20px rgba(35,45,90,.07);
+      z-index: 2;
+    }
+    .tree-toggle::before {
+      content: ""; width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+      transform: rotate(-45deg); transition: transform .22s ease;
+    }
+    .tree-toggle.expanded::before { transform: rotate(45deg); }
+    .tree-toggle.empty {
+      pointer-events: none; background: color-mix(in srgb, var(--surface-solid) 72%, transparent);
+      color: var(--muted); opacity: .46;
+    }
+    .tree-toggle.empty::before {
+      width: 7px; height: 7px; border: 2px solid currentColor; border-radius: 50%; transform: none;
+    }
+    .node {
+      min-width: 0; border: 1px solid var(--line); border-radius: 18px;
+      background: color-mix(in srgb, var(--surface-solid) 94%, var(--surface-2));
+      box-shadow: 0 16px 38px rgba(35,45,90,.09);
+      overflow: hidden; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+    }
+    .node:hover {
+      border-color: color-mix(in srgb, var(--brand) 28%, var(--line));
+      box-shadow: 0 20px 44px rgba(35,45,90,.12);
+    }
+    .node[data-detail-expanded="true"] {
+      background: var(--surface-solid);
+      box-shadow: 0 22px 50px rgba(35,45,90,.12);
+    }
+    .node-summary {
+      display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 12px;
+      align-items: center; padding: 14px 16px; cursor: pointer;
+    }
+    .node-kind {
+      width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center;
+      color: white; background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.2), 0 12px 22px rgba(79,70,229,.18);
+      font-weight: 900; font-size: 12px;
+    }
+    .node-kind.task { background: linear-gradient(135deg, #7c3aed, #4f46e5); }
+    .node-kind.doc { background: linear-gradient(135deg, #0284c7, #06b6d4); }
+    .node-kind.folder { background: linear-gradient(135deg, #4f46e5, #7c3aed); }
+    .node-title {
+      min-width: 0; display: grid; gap: 7px;
+    }
+    .node-title strong { overflow-wrap: anywhere; font-size: 15px; line-height: 1.35; }
+    .node-title input { min-width: 0; font-weight: 800; font-size: 15px; padding: 9px 11px; border-radius: 12px; }
+    .node-meta-line {
+      display: flex; flex-wrap: wrap; gap: 7px; align-items: center;
+      color: var(--muted); font-size: 12px;
+    }
+    .node-chip,
+    .node-child-count {
+      display: inline-flex; align-items: center; gap: 5px; min-height: 24px;
+      padding: 4px 8px; border-radius: 999px; border: 1px solid var(--line);
+      background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 800;
+      white-space: nowrap;
+    }
+    .node-child-count { color: var(--brand); background: rgba(79,70,229,.10); }
+    .node-expand-indicator {
+      width: 30px; height: 30px; border-radius: 11px;
+      display: grid; place-items: center; color: var(--muted);
+      background: var(--surface-2); border: 1px solid var(--line);
+      transition: transform .2s ease, color .2s ease, background .2s ease;
+    }
+    .node-expand-indicator::before {
+      content: ""; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+      transform: rotate(45deg);
+    }
+    .node[data-detail-expanded="true"] .node-expand-indicator {
+      color: var(--brand); background: rgba(79,70,229,.10); transform: rotate(180deg);
+    }
+    .node-detail-shell,
+    .tree-children-shell {
+      display: grid; grid-template-rows: 0fr;
+      transition: grid-template-rows .32s cubic-bezier(.2,.8,.2,1), opacity .24s ease, transform .24s ease;
+      opacity: 0; transform: translateY(-5px);
+    }
+    .tree-children-shell {
+      grid-column: 2;
+    }
+    .node-detail-shell.expanded,
+    .tree-children-shell.expanded {
+      grid-template-rows: 1fr; opacity: 1; transform: translateY(0);
+    }
+    .node-detail-inner,
+    .tree-children-inner {
+      min-height: 0; overflow: hidden;
+    }
+    .node-detail-inner {
+      display: grid; gap: 12px; padding: 14px 16px 16px 70px;
+      border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+    }
+    .tree-children-inner {
+      padding-top: 2px;
+    }
+    .node-actions { display: flex; flex-wrap: wrap; gap: 8px; }
     .node-actions button { width: auto; padding: 6px 12px; font-size: 12px; }
-    
-    .meta { margin-top: 6px; font-size: 12px; color: var(--muted); }
-    .node-content { margin-top: 8px; white-space: pre-wrap; color: var(--text); font-size: 14px; line-height: 1.6; }
-    .node textarea { margin-top: 8px; min-height: 82px; resize: vertical; }
-    
-    .node-policy { display: grid; gap: 6px; margin-top: 10px; max-width: 260px; }
+    .node-content {
+      white-space: pre-wrap; color: var(--text); font-size: 14px; line-height: 1.65;
+      padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2);
+    }
+    .node textarea { min-height: 88px; resize: vertical; }
+    .node-policy {
+      display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      max-width: 760px;
+    }
     .multi-select { position: relative; display: block; }
     .multi-select summary {
       box-sizing: border-box; width: 100%; min-height: 44px; border: 1px solid var(--line);
@@ -302,6 +424,14 @@ export function renderHomePage(): string {
       .employee-work-grid { flex-direction: column; }
       .employee-log-card { width: 100%; }
       .topbar { flex-direction: column; height: auto; align-items: stretch; }
+      .tree-item { padding-left: calc(var(--depth, 0) * 20px); }
+      .tree-item::before { left: calc(var(--depth, 0) * 20px + 16px); }
+      .tree-branch { left: calc(var(--depth, 0) * 20px + 16px); width: 20px; }
+      .node-shell { grid-template-columns: 32px minmax(0, 1fr); gap: 8px; }
+      .node-summary { grid-template-columns: 36px minmax(0, 1fr) 28px; gap: 9px; padding: 12px; }
+      .node-kind { width: 36px; height: 36px; border-radius: 12px; font-size: 11px; }
+      .node-detail-inner { padding: 12px; }
+      .node-policy { grid-template-columns: 1fr; max-width: none; }
     }
     </style>
   </head>
@@ -415,7 +545,7 @@ export function renderHomePage(): string {
                 <p>管理和查看协同树节点。</p>
               </div>
             </div>
-            <ul id="tree" class="tree"></ul>
+            <ul id="tree" class="tree tree-workspace"></ul>
           </section>
 
           <aside class="section-card glass employee-log-card">
@@ -488,6 +618,10 @@ export function renderHomePage(): string {
         editing: {
           timers: {},
           drafts: {}
+        },
+        treeUi: {
+          expandedDetailNodeIds: {},
+          expandedTreeNodeIds: {}
         },
         offline: {
           connected: false,
@@ -769,7 +903,7 @@ export function renderHomePage(): string {
         renderLogs();
         if (!state.view) return;
         for (const root of state.view.roots) {
-          els.tree.appendChild(renderNode(root));
+          els.tree.appendChild(renderNode(root, 0));
         }
         restoreEditorFocus(focus);
       }
@@ -895,14 +1029,117 @@ export function renderHomePage(): string {
         return new Date(value).toLocaleString("zh-CN", { hour12: false });
       }
 
-      function renderNode(node) {
+      function hasNodeChildren(node) {
+        return Boolean(node.children && node.children.length > 0);
+      }
+
+      function hasExplicitTreeState(map, nodeId) {
+        return Object.prototype.hasOwnProperty.call(map, nodeId);
+      }
+
+      function isDetailExpanded(node, depth) {
+        if (hasExplicitTreeState(state.treeUi.expandedDetailNodeIds, node.id)) {
+          return state.treeUi.expandedDetailNodeIds[node.id];
+        }
+        return depth === 0;
+      }
+
+      function isTreeExpanded(node, depth) {
+        if (!hasNodeChildren(node)) return false;
+        if (hasExplicitTreeState(state.treeUi.expandedTreeNodeIds, node.id)) {
+          return state.treeUi.expandedTreeNodeIds[node.id];
+        }
+        return depth <= 1;
+      }
+
+      function toggleNodeDetails(node, depth) {
+        state.treeUi.expandedDetailNodeIds[node.id] = !isDetailExpanded(node, depth);
+        render();
+      }
+
+      function toggleNodeChildren(node, depth) {
+        if (!hasNodeChildren(node)) return;
+        state.treeUi.expandedTreeNodeIds[node.id] = !isTreeExpanded(node, depth);
+        render();
+      }
+
+      function shouldIgnoreNodeSummaryClick(event) {
+        const target = event.target;
+        return Boolean(
+          target &&
+          target.closest &&
+          target.closest("button, input, textarea, select, details, summary, label, .multi-select, .node-actions, .node-policy")
+        );
+      }
+
+      function nodeTypeAbbreviation(type) {
+        if (type === "folder") return "DIR";
+        if (type === "task") return "TSK";
+        return "DOC";
+      }
+
+      function nodeTypeLabel(type) {
+        if (type === "folder") return "目录";
+        if (type === "task") return "任务";
+        return "文档";
+      }
+
+      function renderNode(node, depth = 0) {
         const li = document.createElement("li");
-        const box = document.createElement("div");
+        li.className = "tree-item";
+        li.style.setProperty("--depth", String(depth));
+
+        const branch = document.createElement("span");
+        branch.className = "tree-branch";
+        li.appendChild(branch);
+
+        const shell = document.createElement("div");
+        shell.className = "node-shell";
+
+        const childCount = node.children ? node.children.length : 0;
+        const childrenExpanded = isTreeExpanded(node, depth);
+        const detailsExpanded = isDetailExpanded(node, depth);
+
+        const childToggle = document.createElement("button");
+        childToggle.type = "button";
+        childToggle.className = "tree-toggle" + (childrenExpanded ? " expanded" : "") + (childCount === 0 ? " empty" : "");
+        childToggle.setAttribute("aria-label", childCount > 0 ? "展开或收缩子节点" : "没有子节点");
+        childToggle.setAttribute("aria-expanded", childrenExpanded ? "true" : "false");
+        childToggle.disabled = childCount === 0;
+        childToggle.addEventListener("click", (event) => {
+          event.stopPropagation();
+          toggleNodeChildren(node, depth);
+        });
+        shell.appendChild(childToggle);
+
+        const box = document.createElement("article");
         box.className = "node";
+        box.dataset.nodeId = node.id;
+        box.dataset.detailExpanded = detailsExpanded ? "true" : "false";
         const draft = getNodeDraft(node);
 
-        const titleRow = document.createElement("div");
-        titleRow.className = "node-title";
+        const summary = document.createElement("div");
+        summary.className = "node-summary";
+        summary.tabIndex = 0;
+        summary.setAttribute("role", "button");
+        summary.setAttribute("aria-expanded", detailsExpanded ? "true" : "false");
+        summary.addEventListener("click", (event) => {
+          if (shouldIgnoreNodeSummaryClick(event)) return;
+          toggleNodeDetails(node, depth);
+        });
+        summary.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          toggleNodeDetails(node, depth);
+        });
+
+        const typeBadge = document.createElement("span");
+        typeBadge.className = "node-kind " + (node.type || "doc");
+        typeBadge.textContent = nodeTypeAbbreviation(node.type);
+        summary.appendChild(typeBadge);
+
+        const titleBlock = document.createElement("div");
+        titleBlock.className = "node-title";
         if (node.permissions.canRename) {
           const titleInput = document.createElement("input");
           titleInput.value = draft.title;
@@ -914,18 +1151,44 @@ export function renderHomePage(): string {
             scheduleAutoSave(node.id);
           });
           titleInput.addEventListener("blur", () => autoSaveNode(node.id).catch((error) => setStatus(error.message)));
-          titleRow.appendChild(titleInput);
+          titleBlock.appendChild(titleInput);
         } else {
           const title = document.createElement("strong");
           title.textContent = node.title;
-          titleRow.appendChild(title);
+          titleBlock.appendChild(title);
         }
-        box.appendChild(titleRow);
 
         const meta = document.createElement("div");
-        meta.className = "meta";
-        meta.textContent = node.id + " · " + node.type + " · " + permissionText(node.permissions);
-        box.appendChild(meta);
+        meta.className = "node-meta-line";
+        const idChip = document.createElement("span");
+        idChip.className = "node-chip";
+        idChip.textContent = node.id;
+        const typeChip = document.createElement("span");
+        typeChip.className = "node-chip";
+        typeChip.textContent = nodeTypeLabel(node.type);
+        const permissionChip = document.createElement("span");
+        permissionChip.className = "node-chip";
+        permissionChip.textContent = permissionText(node.permissions);
+        const childChip = document.createElement("span");
+        childChip.className = "node-child-count";
+        childChip.textContent = childCount + " 个子节点";
+        meta.appendChild(idChip);
+        meta.appendChild(typeChip);
+        meta.appendChild(permissionChip);
+        meta.appendChild(childChip);
+        titleBlock.appendChild(meta);
+        summary.appendChild(titleBlock);
+
+        const detailIndicator = document.createElement("span");
+        detailIndicator.className = "node-expand-indicator";
+        detailIndicator.setAttribute("aria-hidden", "true");
+        summary.appendChild(detailIndicator);
+        box.appendChild(summary);
+
+        const detailShell = document.createElement("div");
+        detailShell.className = "node-detail-shell" + (detailsExpanded ? " expanded" : "");
+        const detailInner = document.createElement("div");
+        detailInner.className = "node-detail-inner";
 
         if (node.permissions.canEditAcl && node.acl && node.acl.visibility) {
           const policyPanel = document.createElement("div");
@@ -975,7 +1238,7 @@ export function renderHomePage(): string {
             );
             policyPanel.appendChild(advancedPolicy.element);
           }
-          box.appendChild(policyPanel);
+          detailInner.appendChild(policyPanel);
         }
 
         if (node.permissions.canEditContent) {
@@ -989,12 +1252,12 @@ export function renderHomePage(): string {
             scheduleAutoSave(node.id);
           });
           contentInput.addEventListener("blur", () => autoSaveNode(node.id).catch((error) => setStatus(error.message)));
-          box.appendChild(contentInput);
+          detailInner.appendChild(contentInput);
         } else if (node.content) {
           const content = document.createElement("div");
           content.className = "node-content";
           content.textContent = node.content;
-          box.appendChild(content);
+          detailInner.appendChild(content);
         }
 
         if (node.permissions.canAddChild || node.permissions.canDelete) {
@@ -1018,15 +1281,25 @@ export function renderHomePage(): string {
             );
             actions.appendChild(deleteButton);
           }
-          box.appendChild(actions);
+          detailInner.appendChild(actions);
         }
 
-        li.appendChild(box);
+        detailShell.appendChild(detailInner);
+        box.appendChild(detailShell);
+        shell.appendChild(box);
+
         if (node.children && node.children.length > 0) {
+          const childrenShell = document.createElement("div");
+          childrenShell.className = "tree-children-shell" + (childrenExpanded ? " expanded" : "");
+          const childrenInner = document.createElement("div");
+          childrenInner.className = "tree-children-inner";
           const ul = document.createElement("ul");
-          for (const child of node.children) ul.appendChild(renderNode(child));
-          li.appendChild(ul);
+          for (const child of node.children) ul.appendChild(renderNode(child, depth + 1));
+          childrenInner.appendChild(ul);
+          childrenShell.appendChild(childrenInner);
+          shell.appendChild(childrenShell);
         }
+        li.appendChild(shell);
         return li;
       }
 
