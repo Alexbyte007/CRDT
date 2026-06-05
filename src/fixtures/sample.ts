@@ -1,13 +1,8 @@
-import type { NewTreeNode, UserId, UserRole } from "../types";
+import type { NewTreeNode, User } from "../types";
 import { addNode } from "../crdt/operations";
 import { type CrdtDocument, createCrdtDocument } from "../crdt/document";
 
-export interface SampleUser {
-  id: UserId;
-  name: string;
-  role: UserRole;
-  department: string;
-}
+const SAMPLE_USER_CREATED_AT = 1_700_000_000_000;
 
 export const sampleUserAccountSeeds = [
   {
@@ -44,12 +39,14 @@ export const sampleUserAccountSeeds = [
   }
 ] as const;
 
-export const sampleUsers: SampleUser[] = sampleUserAccountSeeds.map(
-  ({ id, name, role, department }) => ({
+export const sampleUsers: User[] = sampleUserAccountSeeds.map(
+  ({ id, username, name, role, department }, index) => ({
     id,
+    username,
     name,
     role,
-    department
+    department,
+    createdAt: SAMPLE_USER_CREATED_AT + index
   })
 );
 

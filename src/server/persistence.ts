@@ -18,6 +18,7 @@ export interface SqliteDocumentStore {
 
   loadUserAccounts(): UserAccount[];
   saveUserAccount(account: UserAccount): void;
+  deleteUserAccount(userId: string): void;
 }
 
 export function createSqliteDocumentStore(
@@ -108,7 +109,24 @@ export function createSqliteDocumentStore(
             ${sqlString(account.department)},
             ${sqlString(account.passwordHash)},
             ${account.createdAt}
-          );
+          )
+          ON CONFLICT(id) DO UPDATE SET
+            username = excluded.username,
+            name = excluded.name,
+            role = excluded.role,
+            department = excluded.department,
+            password_hash = excluded.password_hash,
+            created_at = excluded.created_at;
+        `
+      );
+    },
+    deleteUserAccount(userId) {
+      runSql(
+        sqliteCommand,
+        databasePath,
+        `
+          DELETE FROM user_accounts
+          WHERE id = ${sqlString(userId)};
         `
       );
     }

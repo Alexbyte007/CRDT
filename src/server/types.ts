@@ -18,7 +18,7 @@ export interface CollaborationServerOptions {
   users: User[];
   userAccounts?: UserAccount[];
   now?: () => number;
-  documentStore?: Pick<SqliteDocumentStore, "save" | "saveUserAccount">;
+  documentStore?: Pick<SqliteDocumentStore, "save" | "saveUserAccount" | "deleteUserAccount">;
 }
 
 export interface CollaborationServer {
@@ -36,7 +36,7 @@ export interface CollaborationContext {
   sessions: Map<string, SessionInfo>;
   policyVersion: number;
   policyEngine: PolicyEngine;
-  accountStore?: Pick<SqliteDocumentStore, "saveUserAccount">;
+  accountStore?: Pick<SqliteDocumentStore, "saveUserAccount" | "deleteUserAccount">;
 }
 
 export interface SessionInfo {
@@ -60,9 +60,11 @@ export interface LoginResponseBody {
 
 export interface PublicUser {
   id: UserId;
+  username: string;
   name: string;
   role: UserRole;
   department: string;
+  createdAt: number;
 }
 
 export interface UpdateUserRequestBody {
@@ -159,6 +161,7 @@ export type ServerMessage =
       type: "view";
       view: UserView;
       stateVector: string;
+      policyVersion: number;
     }
   | {
       type: "operationApplied";
@@ -166,6 +169,7 @@ export type ServerMessage =
       operationId?: string;
       deduplicated?: boolean;
       stateVector: string;
+      policyVersion: number;
     }
   | {
       type: "error";

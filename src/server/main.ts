@@ -40,9 +40,11 @@ if (userAccounts.length === 0) {
 
 const users = userAccounts.map((account) => ({
   id: account.id,
+  username: account.username,
   name: account.name,
   role: account.role,
-  department: account.department
+  department: account.department,
+  createdAt: account.createdAt
 }));
 
 const server = createCollaborationServer({

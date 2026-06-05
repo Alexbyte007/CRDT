@@ -144,13 +144,19 @@ describe("collaboration server", () => {
     expect(html).toContain("noticeDialog");
     expect(html).toContain("showNoticeDialog");
     expect(html).toContain("确定");
+    expect(html).toContain("用户管理");
+    expect(html).toContain("userManagement");
+    expect(html).toContain("renderUserManagement");
+    expect(html).toContain("updateUserRole");
+    expect(html).toContain("updateUserDepartment");
+    expect(html).toContain("deleteUserAccount");
+    expect(html).toContain("/api/users/");
     expect(html).toContain("formatDeleteRejectedMessage");
     expect(html).toContain("删除被拒绝");
     expect(html).toContain("impact.canResolveConflict");
     expect(html).not.toContain("归档父项目");
     expect(html).toContain("localStorage");
     expect(html).toContain("crdt-editor-offline-queue-v1");
-    expect(html).not.toContain("用户与权限管理");
     expect(html).not.toContain("选中节点 ID");
     expect(html).not.toContain("<pre id=\"raw\"");
     expect(html).not.toContain("<button id=\"rename\"");
@@ -1077,6 +1083,168 @@ describe("collaboration server", () => {
     expect(forbiddenPatchBody.error.name).toBe("AuthorizationError");
   });
 
+  it("lists user management metadata and recalculates permissions after role updates", async () => {
+    const { baseUrl } = await startTestServer();
+    const admin = await login(baseUrl, "u-admin");
+    const guest = await login(baseUrl, "u-guest");
+
+    const initialGuestView = await fetchView(baseUrl, guest.token);
+    expect(flattenViewIds(initialGuestView)).not.toContain("node-dev-plan");
+
+    const usersResponse = await fetch(`${baseUrl}/api/users`, {
+      headers: authHeaders(admin.token)
+    });
+    const usersBody = (await usersResponse.json()) as {
+      users: Array<{
+        id: string;
+        username: string;
+        name: string;
+        role: string;
+        department: string;
+        createdAt: number;
+      }>;
+    };
+
+    expect(usersResponse.status).toBe(200);
+    expect(usersBody.users).toContainEqual(
+      expect.objectContaining({
+        id: "u-guest",
+        username: "guest",
+        name: "访客",
+        role: "guest",
+        department: "external",
+        createdAt: expect.any(Number)
+      })
+    );
+
+    const updateResponse = await fetch(`${baseUrl}/api/users/u-guest`, {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(admin.token)
+      },
+      body: JSON.stringify({
+        role: "member"
+      })
+    });
+    const updateBody = (await updateResponse.json()) as {
+      ok: true;
+      user: { id: string; username: string; role: string; department: string };
+      policyVersion: number;
+    };
+
+    expect(updateResponse.status).toBe(200);
+    expect(updateBody.user).toMatchObject({
+      id: "u-guest",
+      username: "guest",
+      role: "member",
+      department: "dev"
+    });
+
+    const sessionResponse = await fetch(`${baseUrl}/api/session`, {
+      headers: authHeaders(guest.token)
+    });
+    const sessionBody = (await sessionResponse.json()) as {
+      ok: true;
+      user: { id: string; role: string; department: string };
+    };
+    expect(sessionResponse.status).toBe(200);
+    expect(sessionBody.user).toMatchObject({
+      id: "u-guest",
+      role: "member",
+      department: "dev"
+    });
+
+    const upgradedGuestView = await fetchView(baseUrl, guest.token);
+    expect(flattenViewIds(upgradedGuestView)).toContain("node-dev-plan");
+    expect(flattenViewIds(upgradedGuestView)).toContain("node-dev-requirements");
+
+    const editResponse = await fetch(`${baseUrl}/api/operations`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(guest.token)
+      },
+      body: JSON.stringify({
+        operation: {
+          type: "updateContent",
+          nodeId: "node-dev-requirements",
+          content: "访客升级为研发人员后可以编辑允许研发人员编辑的节点。"
+        }
+      })
+    });
+    expect(editResponse.status).toBe(200);
+
+    const adminStillActiveResponse = await fetch(`${baseUrl}/api/users`, {
+      headers: authHeaders(admin.token)
+    });
+    expect(adminStillActiveResponse.status).toBe(200);
+  });
+
+  it("allows admins to delete ordinary users while protecting admins", async () => {
+    const { baseUrl } = await startTestServer();
+    const admin = await login(baseUrl, "u-admin");
+    const member = await login(baseUrl, "u-dev-member");
+
+    const forbiddenDelete = await fetch(`${baseUrl}/api/users/u-guest`, {
+      method: "DELETE",
+      headers: authHeaders(member.token)
+    });
+    const forbiddenDeleteBody = (await forbiddenDelete.json()) as {
+      ok: false;
+      error: { name: string };
+    };
+    expect(forbiddenDelete.status).toBe(400);
+    expect(forbiddenDeleteBody.error.name).toBe("AuthorizationError");
+
+    const selfDelete = await fetch(`${baseUrl}/api/users/u-admin`, {
+      method: "DELETE",
+      headers: authHeaders(admin.token)
+    });
+    const selfDeleteBody = (await selfDelete.json()) as {
+      ok: false;
+      error: { name: string; message: string };
+    };
+    expect(selfDelete.status).toBe(400);
+    expect(selfDeleteBody.error.name).toBe("AuthorizationError");
+    expect(selfDeleteBody.error.message).toContain("Cannot delete the current administrator");
+
+    const deleteResponse = await fetch(`${baseUrl}/api/users/u-guest`, {
+      method: "DELETE",
+      headers: authHeaders(admin.token)
+    });
+    const deleteBody = (await deleteResponse.json()) as {
+      ok: true;
+      deletedUserId: string;
+      policyVersion: number;
+    };
+    expect(deleteResponse.status).toBe(200);
+    expect(deleteBody.deletedUserId).toBe("u-guest");
+
+    const usersResponse = await fetch(`${baseUrl}/api/users`, {
+      headers: authHeaders(admin.token)
+    });
+    const usersBody = (await usersResponse.json()) as {
+      users: Array<{ id: string }>;
+    };
+    expect(usersResponse.status).toBe(200);
+    expect(usersBody.users.map((user) => user.id)).not.toContain("u-guest");
+
+    const deletedLogin = await fetch(`${baseUrl}/api/login`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ username: "guest", password: "guest123" })
+    });
+    const deletedLoginBody = (await deletedLogin.json()) as {
+      ok: false;
+      error: { name: string };
+    };
+    expect(deletedLogin.status).toBe(400);
+    expect(deletedLoginBody.error.name).toBe("AuthenticationError");
+  });
+
   it("rejects unauthenticated view requests and ignores forged operation user ids", async () => {
     const { baseUrl } = await startTestServer();
 
@@ -1123,41 +1291,108 @@ describe("collaboration server", () => {
     expect(forgedBody.error.name).toBe("AccessControlError");
   });
 
-  it("invalidates active sessions after an admin changes user permissions", async () => {
+  it("revalidates queued offline operations after a role downgrade", async () => {
     const { baseUrl } = await startTestServer();
     const admin = await login(baseUrl, "u-admin");
-    const member = await login(baseUrl, "u-dev-member");
+    const manager = await login(baseUrl, "u-dev-manager");
+    const stateVector = await currentStateVector(baseUrl, manager.token);
 
-    const updateResponse = await fetch(`${baseUrl}/api/users/u-dev-member`, {
+    const updateResponse = await fetch(`${baseUrl}/api/users/u-dev-manager`, {
       method: "PATCH",
       headers: {
         "content-type": "application/json",
         ...authHeaders(admin.token)
       },
       body: JSON.stringify({
-        role: "manager",
-        department: "dev"
+        role: "guest",
+        department: "external"
       })
     });
-    const updateBody = (await updateResponse.json()) as {
-      ok: true;
-      policyVersion: number;
-      sessionsInvalidated: boolean;
-    };
 
     expect(updateResponse.status).toBe(200);
-    expect(updateBody.sessionsInvalidated).toBe(true);
 
-    const staleResponse = await fetch(`${baseUrl}/api/view`, {
-      headers: authHeaders(member.token)
+    const reloggedManager = await login(baseUrl, "u-dev-manager");
+    const replayResponse = await fetch(`${baseUrl}/api/operations/batch`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(reloggedManager.token)
+      },
+      body: JSON.stringify({
+        operations: [
+          {
+            id: "op-manager-before-downgrade",
+            userId: "u-dev-manager",
+            baseStateVector: stateVector,
+            createdAt: 42,
+            operation: {
+              type: "addNode",
+              parentId: "node-dev-requirements",
+              nodeId: "node-queued-before-downgrade",
+              title: "降级前离线新增",
+              content: "这个操作应按访客身份重新校验并拒绝。"
+            }
+          }
+        ]
+      })
     });
-    const staleBody = (await staleResponse.json()) as {
-      ok: false;
-      error: { name: string; message: string };
+    const replayBody = (await replayResponse.json()) as {
+      ok: true;
+      applied: string[];
+      rejected: Array<{ id?: string; error: { name: string; code?: string } }>;
+      view: UserView;
     };
 
-    expect(staleResponse.status).toBe(400);
-    expect(staleBody.error.name).toBe("AuthenticationError");
+    expect(replayResponse.status).toBe(200);
+    expect(replayBody.applied).toEqual([]);
+    expect(replayBody.rejected).toHaveLength(1);
+    expect(replayBody.rejected[0]).toMatchObject({
+      id: "op-manager-before-downgrade",
+      error: { name: "AccessControlError" }
+    });
+    expect(["TARGET_NOT_VISIBLE", "ACCESS_DENIED"]).toContain(replayBody.rejected[0].error.code);
+    expect(flattenViewIds(replayBody.view)).not.toContain("node-dev-requirements");
+    expect(getDocumentSnapshot(runningServer!.context.crdt).nodes["node-queued-before-downgrade"]).toBeUndefined();
+  });
+
+  it("broadcasts recalculated WebSocket views after role changes", async () => {
+    const { baseUrl, port } = await startTestServer();
+    const admin = await login(baseUrl, "u-admin");
+    const member = await login(baseUrl, "u-dev-member");
+    const memberSocket = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${member.token}`);
+
+    try {
+      const initial = await nextMessage(memberSocket);
+      expect(initial.type).toBe("view");
+      expect(initial.type === "view" ? flattenViewIds(initial.view) : []).toContain("node-dev-plan");
+
+      const memberLosesDevNodes = waitForMessage(
+        memberSocket,
+        (message) => message.type === "view" && !flattenViewIds(message.view).includes("node-dev-plan")
+      );
+
+      const updateResponse = await fetch(`${baseUrl}/api/users/u-dev-member`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          ...authHeaders(admin.token)
+        },
+        body: JSON.stringify({
+          role: "guest",
+          department: "external"
+        })
+      });
+      expect(updateResponse.status).toBe(200);
+
+      const updated = await memberLosesDevNodes;
+      expect(updated.type).toBe("view");
+      expect(updated.type === "view" ? flattenViewIds(updated.view) : []).toEqual([
+        "node-root",
+        "node-public"
+      ]);
+    } finally {
+      memberSocket.close();
+    }
   });
 
   it("registers a new guest account and logs in with password", async () => {

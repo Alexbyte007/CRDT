@@ -80,7 +80,9 @@ export function requireAdmin(user: User): void {
 
 export function rotatePolicyVersion(context: CollaborationContext): void {
   context.policyVersion += 1;
-  context.sessions.clear();
+  for (const session of context.sessions.values()) {
+    session.policyVersion = context.policyVersion;
+  }
 }
 
 export function getBearerToken(request: IncomingMessage): string | null {
