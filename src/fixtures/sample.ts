@@ -1,40 +1,54 @@
-import type { NewTreeNode, UserId, UserRole } from "../types";
+import type { NewTreeNode, User } from "../types";
 import { addNode } from "../crdt/operations";
 import { type CrdtDocument, createCrdtDocument } from "../crdt/document";
 
-export interface SampleUser {
-  id: UserId;
-  name: string;
-  role: UserRole;
-  department: string;
-}
+const SAMPLE_USER_CREATED_AT = 1_700_000_000_000;
 
-export const sampleUsers: SampleUser[] = [
+export const sampleUserAccountSeeds = [
   {
     id: "u-admin",
+    username: "admin",
     name: "管理员",
     role: "admin",
-    department: "all"
+    department: "all",
+    password: "admin123"
   },
   {
     id: "u-dev-manager",
-    name: "研发组长",
+    username: "manager",
+    name: "研发经理",
     role: "manager",
-    department: "dev"
+    department: "dev",
+    password: "manager123"
   },
   {
     id: "u-dev-member",
-    name: "研发成员",
+    username: "member",
+    name: "研发人员",
     role: "member",
-    department: "dev"
+    department: "dev",
+    password: "member123"
   },
   {
     id: "u-guest",
+    username: "guest",
     name: "访客",
     role: "guest",
-    department: "external"
+    department: "external",
+    password: "guest123"
   }
-];
+] as const;
+
+export const sampleUsers: User[] = sampleUserAccountSeeds.map(
+  ({ id, username, name, role, department }, index) => ({
+    id,
+    username,
+    name,
+    role,
+    department,
+    createdAt: SAMPLE_USER_CREATED_AT + index
+  })
+);
 
 export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
   const crdt = createCrdtDocument({

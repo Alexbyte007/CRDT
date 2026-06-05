@@ -319,8 +319,12 @@ export function renderHomePage(): string {
         z-index: 50;
       }
 
+      .hidden {
+        display: none !important;
+      }
+        
       .modal.hidden {
-        display: none;
+        display: none !important;
       }
 
       .modal-card {
@@ -397,6 +401,44 @@ export function renderHomePage(): string {
         color: #667085;
       }
 
+      .admin-panel.hidden {
+        display: none;
+      }
+
+      .user-table-wrap {
+        overflow-x: auto;
+      }
+
+      .user-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      .user-table th,
+      .user-table td {
+        padding: 8px 6px;
+        border-bottom: 1px solid #e1e5ec;
+        text-align: left;
+        vertical-align: middle;
+        white-space: nowrap;
+      }
+
+      .user-table th {
+        color: #535b66;
+        font-weight: 650;
+      }
+
+      .user-table select {
+        min-width: 112px;
+      }
+
+      .user-table button {
+        width: auto;
+        padding: 6px 9px;
+        font-size: 12px;
+      }
+
       @media (max-width: 900px) {
         main {
           grid-template-columns: 1fr;
@@ -419,41 +461,99 @@ export function renderHomePage(): string {
 
     <div class="login-screen">
       <section class="login-panel stack">
-        <div>
-          <h2 class="login-title">登录协同空间</h2>
-          <p class="login-copy">选择一个演示账号登录。登录后服务端会签发会话 token，所有视图和编辑操作都按会话身份校验。</p>
+        <h2 class="login-title">登录协同空间</h2>
+        <p class="login-copy">请输入用户名和密码登录。也可以注册普通访客账号。</p>
+
+        <div id="loginPanel" class="stack">
+          <div>
+            <label for="loginUsername">用户名</label>
+            <input id="loginUsername" autocomplete="username" placeholder="例如：admin" />
+          </div>
+          <div>
+            <label for="loginPassword">密码</label>
+            <input id="loginPassword" type="password" autocomplete="current-password" placeholder="请输入密码" />
+          </div>
+
+          <div class="toolbar">
+            <button id="login">登录</button>
+            <button id="showRegister" class="secondary" type="button">注册账号</button>
+          </div>
+
+          <div class="hint">
+            测试账号：
+            管理员 admin / admin123；
+            研发经理 manager / manager123；
+            研发人员 member / member123；
+            访客 guest / guest123。
+          </div>
         </div>
-        <div>
-          <label for="loginUser">登录用户</label>
-          <select id="loginUser">
-            <option value="u-admin">管理员 / admin / all</option>
-            <option value="u-dev-manager">研发经理 / manager / dev</option>
-            <option value="u-dev-member">研发成员 / member / dev</option>
-            <option value="u-guest">访客 / guest / external</option>
-          </select>
+
+        <div id="registerPanel" class="stack hidden">
+          <div>
+            <label for="registerUsername">用户名</label>
+            <input id="registerUsername" autocomplete="username" />
+          </div>
+          <div>
+            <label for="registerDisplayName">显示名称</label>
+            <input id="registerDisplayName" />
+          </div>
+          <div>
+            <label for="registerPassword">密码</label>
+            <input id="registerPassword" type="password" autocomplete="new-password" />
+          </div>
+          <div>
+            <label for="registerConfirmPassword">确认密码</label>
+            <input id="registerConfirmPassword" type="password" autocomplete="new-password" />
+          </div>
+          <div class="toolbar">
+            <button id="register" type="button">提交注册</button>
+            <button id="hideRegister" class="secondary" type="button">取消</button>
+          </div>
         </div>
-        <button id="login">登录</button>
+
         <div class="status" id="loginStatus"></div>
       </section>
     </div>
 
     <main>
-      <section class="panel stack">
-        <div class="sync-state">
-          <div>会话用户：<strong id="sessionUser">未登录</strong></div>
-          <div>策略版本：<strong id="policyVersion">-</strong></div>
-          <div>连接状态：<strong id="connectionState">未连接</strong></div>
-          <div>离线队列：<strong id="queueLength">0</strong></div>
+      <section class="stack">
+        <div class="panel stack">
+          <div class="sync-state">
+            <div>会话用户：<strong id="sessionUser">未登录</strong></div>
+            <div>策略版本：<strong id="policyVersion">-</strong></div>
+            <div>连接状态：<strong id="connectionState">未连接</strong></div>
+            <div>离线队列：<strong id="queueLength">0</strong></div>
+          </div>
+          <div class="toolbar">
+            <button id="refresh" class="secondary">刷新视图</button>
+            <button id="connect" class="secondary">联网</button>
+          </div>
+          <div class="toolbar">
+            <button id="syncOffline" class="secondary">同步离线操作</button>
+            <button id="logout" class="secondary">登出</button>
+          </div>
+          <div class="status" id="status"></div>
         </div>
-        <div class="toolbar">
-          <button id="refresh" class="secondary">刷新视图</button>
-          <button id="connect" class="secondary">联网</button>
+
+        <div id="userManagement" class="panel stack admin-panel hidden" aria-hidden="true">
+          <h2>用户管理</h2>
+          <div class="user-table-wrap">
+            <table class="user-table">
+              <thead>
+                <tr>
+                  <th>显示名称</th>
+                  <th>用户名</th>
+                  <th>当前身份</th>
+                  <th>部门</th>
+                  <th>创建时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="userRows"></tbody>
+            </table>
+          </div>
+          <div class="status" id="userManagementStatus"></div>
         </div>
-        <div class="toolbar">
-          <button id="syncOffline" class="secondary">同步离线操作</button>
-          <button id="logout" class="secondary">登出</button>
-        </div>
-        <div class="status" id="status"></div>
       </section>
 
       <section class="stack">
@@ -515,7 +615,17 @@ export function renderHomePage(): string {
       };
 
       const els = {
-        loginUser: document.querySelector("#loginUser"),
+        loginPanel: document.querySelector("#loginPanel"),
+        loginUsername: document.querySelector("#loginUsername"),
+        loginPassword: document.querySelector("#loginPassword"),
+        showRegister: document.querySelector("#showRegister"),
+        hideRegister: document.querySelector("#hideRegister"),
+        registerPanel: document.querySelector("#registerPanel"),
+        registerUsername: document.querySelector("#registerUsername"),
+        registerDisplayName: document.querySelector("#registerDisplayName"),
+        registerPassword: document.querySelector("#registerPassword"),
+        registerConfirmPassword: document.querySelector("#registerConfirmPassword"),
+        register: document.querySelector("#register"),
         login: document.querySelector("#login"),
         loginStatus: document.querySelector("#loginStatus"),
         logout: document.querySelector("#logout"),
@@ -529,6 +639,9 @@ export function renderHomePage(): string {
         syncOffline: document.querySelector("#syncOffline"),
         status: document.querySelector("#status"),
         tree: document.querySelector("#tree"),
+        userManagement: document.querySelector("#userManagement"),
+        userRows: document.querySelector("#userRows"),
+        userManagementStatus: document.querySelector("#userManagementStatus"),
         deleteDialog: document.querySelector("#deleteDialog"),
         deleteDialogCopy: document.querySelector("#deleteDialogCopy"),
         deleteDialogVisibleNodes: document.querySelector("#deleteDialogVisibleNodes"),
@@ -547,15 +660,30 @@ export function renderHomePage(): string {
       let noticeDialogResolver = null;
 
       function currentUserId() {
-        return state.user ? state.user.id : els.loginUser.value;
+        return state.user ? state.user.id : "";
       }
 
       function setStatus(text) {
         els.status.textContent = text;
       }
 
+      function setUserManagementStatus(text) {
+        els.userManagementStatus.textContent = text;
+      }
+
       function setLoginStatus(text) {
         els.loginStatus.textContent = text;
+      }
+
+      function clearRegisterForm() {
+        els.registerUsername.value = "";
+        els.registerDisplayName.value = "";
+        els.registerPassword.value = "";
+        els.registerConfirmPassword.value = "";
+      }
+
+      function clearLoginPassword() {
+        els.loginPassword.value = "";
       }
 
       function loadStoredOfflineQueue() {
@@ -601,7 +729,10 @@ export function renderHomePage(): string {
         const body = await requestJson("/api/login", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ userId: els.loginUser.value })
+          body: JSON.stringify({
+            username: els.loginUsername.value,
+            password: els.loginPassword.value
+          })
         });
         state.token = body.token;
         state.user = body.user;
@@ -634,6 +765,13 @@ export function renderHomePage(): string {
           state.offline.connected = false;
           clearAllAutoSaveTimers();
           state.editing.drafts = {};
+
+          els.registerPanel.classList.add("hidden");
+          els.loginPanel.classList.remove("hidden");
+          els.loginPassword.value = "";
+          els.registerPassword.value = "";
+          els.registerConfirmPassword.value = "";
+          
           render();
           setLoginStatus("已登出");
         }
@@ -650,6 +788,16 @@ export function renderHomePage(): string {
         state.policyVersion = body.policyVersion || state.policyVersion;
       }
 
+      async function refreshSession() {
+        if (!state.token) {
+          return;
+        }
+        const body = await requestJson("/api/session");
+        state.user = body.user;
+        state.policyVersion = body.policyVersion || state.policyVersion;
+        await loadAdminUsers();
+      }
+
       async function loadAdminUsers() {
         if (!state.token || !state.user || state.user.role !== "admin") {
           state.users = [];
@@ -660,13 +808,50 @@ export function renderHomePage(): string {
         state.policyVersion = body.policyVersion || state.policyVersion;
       }
 
+      async function registerAccount() {
+        setLoginStatus("正在注册...");
+        const body = await requestJson("/api/register", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            username: els.registerUsername.value,
+            displayName: els.registerDisplayName.value,
+            password: els.registerPassword.value,
+            confirmPassword: els.registerConfirmPassword.value
+          })
+        });
+
+        state.token = body.token;
+        state.user = body.user;
+        state.policyVersion = body.policyVersion || 0;
+
+        clearRegisterForm();
+        clearLoginPassword();
+
+        els.registerPanel.classList.add("hidden");
+        els.loginPanel.classList.remove("hidden");
+
+        clearAllAutoSaveTimers();
+        state.editing.drafts = {};
+        setLoginStatus("");
+        setStatus("已注册并登录：" + state.user.name);
+        await loadView();
+        render();
+        connectWebSocket();
+      }
+
       function render() {
         const focus = captureEditorFocus();
         document.body.className = state.user ? "app-mode" : "login-mode";
-        els.headerSession.textContent = state.user
-          ? state.user.name + " / " + state.user.role
-          : "未登录";
+        if (state.user) {
+          els.headerSession.classList.remove("hidden");
+          els.headerSession.textContent = state.user.name + " / " + state.user.role;
+        } else {
+          els.headerSession.classList.add("hidden");
+          els.headerSession.textContent = "";
+        }
         els.tree.innerHTML = "";
+        renderUserManagement();
         renderSyncState();
         if (!state.view) return;
         for (const root of state.view.roots) {
@@ -691,6 +876,105 @@ export function renderHomePage(): string {
         els.refresh.disabled = !state.token;
         els.connect.disabled = !state.token;
         els.connect.textContent = isSocketActive() ? "断网" : "联网";
+      }
+
+      function renderUserManagement() {
+        if (!state.user || state.user.role !== "admin") {
+          els.userManagement.classList.add("hidden");
+          els.userManagement.setAttribute("aria-hidden", "true");
+          els.userRows.innerHTML = "";
+          setUserManagementStatus("");
+          return;
+        }
+
+        els.userManagement.classList.remove("hidden");
+        els.userManagement.setAttribute("aria-hidden", "false");
+        els.userRows.innerHTML = "";
+        const adminCount = state.users.filter((user) => user.role === "admin").length;
+
+        for (const user of state.users) {
+          const row = document.createElement("tr");
+          appendTextCell(row, user.name);
+          appendTextCell(row, user.username || user.id);
+          row.appendChild(renderRoleCell(user, adminCount));
+          row.appendChild(renderDepartmentCell(user));
+          appendTextCell(row, formatTimestamp(user.createdAt));
+          row.appendChild(renderUserActionCell(user, adminCount));
+          els.userRows.appendChild(row);
+        }
+      }
+
+      function appendTextCell(row, text) {
+        const cell = document.createElement("td");
+        cell.textContent = text || "-";
+        row.appendChild(cell);
+      }
+
+      function renderRoleCell(user, adminCount) {
+        const cell = document.createElement("td");
+        const roleSelect = document.createElement("select");
+        roleSelect.innerHTML =
+          '<option value="guest">访客</option>' +
+          '<option value="member">研发人员</option>' +
+          '<option value="manager">研发经理</option>' +
+          '<option value="admin">管理员</option>';
+        roleSelect.value = user.role;
+        roleSelect.disabled = user.role === "admin" && adminCount <= 1;
+        roleSelect.addEventListener("change", async () => {
+          const previousRole = user.role;
+          try {
+            await updateUserRole(user.id, roleSelect.value);
+          } catch (error) {
+            roleSelect.value = previousRole;
+            setUserManagementStatus(error.message);
+          }
+        });
+        cell.appendChild(roleSelect);
+        return cell;
+      }
+
+      function renderDepartmentCell(user) {
+        const cell = document.createElement("td");
+        const departmentSelect = document.createElement("select");
+        departmentSelect.innerHTML =
+          '<option value="all">all</option>' +
+          '<option value="dev">dev</option>' +
+          '<option value="external">external</option>' +
+          '<option value="finance">finance</option>';
+        departmentSelect.value = user.department;
+        departmentSelect.addEventListener("change", async () => {
+          const previousDepartment = user.department;
+          try {
+            await updateUserDepartment(user.id, departmentSelect.value);
+          } catch (error) {
+            departmentSelect.value = previousDepartment;
+            setUserManagementStatus(error.message);
+          }
+        });
+        cell.appendChild(departmentSelect);
+        return cell;
+      }
+
+      function renderUserActionCell(user, adminCount) {
+        const cell = document.createElement("td");
+        const deleteButton = document.createElement("button");
+        deleteButton.type = "button";
+        deleteButton.className = "danger";
+        deleteButton.textContent = "删除";
+        deleteButton.disabled =
+          user.id === state.user.id || (user.role === "admin" && adminCount <= 1);
+        deleteButton.addEventListener("click", () =>
+          deleteUserAccount(user).catch((error) => setUserManagementStatus(error.message))
+        );
+        cell.appendChild(deleteButton);
+        return cell;
+      }
+
+      function formatTimestamp(value) {
+        if (typeof value !== "number" || !Number.isFinite(value)) {
+          return "-";
+        }
+        return new Date(value).toLocaleString("zh-CN", { hour12: false });
       }
 
       function renderNode(node) {
@@ -1089,6 +1373,73 @@ export function renderHomePage(): string {
         });
       }
 
+      async function updateUserRole(userId, role) {
+        setUserManagementStatus("正在更新身份...");
+        const existingUser = state.users.find((user) => user.id === userId);
+        const body = await requestJson("/api/users/" + encodeURIComponent(userId), {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            role,
+            department: departmentForRole(role, existingUser ? existingUser.department : "")
+          })
+        });
+        if (state.user && body.user && body.user.id === state.user.id) {
+          state.user = body.user;
+        }
+        await refreshSession();
+        await loadView();
+        render();
+        setUserManagementStatus("身份已更新，权限视图已刷新");
+      }
+
+      async function updateUserDepartment(userId, department) {
+        setUserManagementStatus("正在更新部门...");
+        const body = await requestJson("/api/users/" + encodeURIComponent(userId), {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ department })
+        });
+        if (state.user && body.user && body.user.id === state.user.id) {
+          state.user = body.user;
+        }
+        await refreshSession();
+        await loadView();
+        render();
+        setUserManagementStatus("部门已更新，权限视图已刷新");
+      }
+
+      function departmentForRole(role, currentDepartment) {
+        if (role === "member" || role === "manager") {
+          return currentDepartment && currentDepartment !== "external" && currentDepartment !== "all"
+            ? currentDepartment
+            : "dev";
+        }
+        if (role === "guest") {
+          return "external";
+        }
+        if (role === "admin") {
+          return currentDepartment || "all";
+        }
+        return currentDepartment || "external";
+      }
+
+      async function deleteUserAccount(user) {
+        if (!window.confirm("确认删除账号 " + (user.username || user.id) + "？")) {
+          return;
+        }
+        setUserManagementStatus("正在删除账号...");
+        const body = await requestJson("/api/users/" + encodeURIComponent(user.id), {
+          method: "DELETE"
+        });
+        state.offline.queue = state.offline.queue.filter((envelope) => envelope.userId !== body.deletedUserId);
+        saveOfflineQueue();
+        await refreshSession();
+        await loadView();
+        render();
+        setUserManagementStatus("账号已删除，权限视图已刷新");
+      }
+
       async function deleteTreeNode(nodeId) {
         const impact = await requestJson("/api/delete-impact?nodeId=" + encodeURIComponent(nodeId));
         if (!impact.blocksSilentDelete) {
@@ -1315,6 +1666,7 @@ export function renderHomePage(): string {
         );
         state.view = body.view;
         state.stateVector = body.stateVector || state.stateVector;
+        await refreshSession();
         render();
 
         if (body.rejected && body.rejected.length > 0) {
@@ -1328,6 +1680,7 @@ export function renderHomePage(): string {
       els.logout.addEventListener("click", () => logout().catch((error) => setStatus(error.message)));
       els.refresh.addEventListener("click", async () => {
         try {
+          await refreshSession();
           await loadView();
           render();
         } catch (error) {
@@ -1356,6 +1709,23 @@ export function renderHomePage(): string {
         }
       });
 
+      els.showRegister.addEventListener("click", () => {
+        els.loginPanel.classList.add("hidden");
+        els.registerPanel.classList.remove("hidden");
+        setLoginStatus("");
+      });
+
+      els.hideRegister.addEventListener("click", () => {
+        clearRegisterForm();
+        els.registerPanel.classList.add("hidden");
+        els.loginPanel.classList.remove("hidden");
+        setLoginStatus("");
+      });
+
+      els.register.addEventListener("click", () =>
+        registerAccount().catch((error) => setLoginStatus(error.message))
+      );
+
       function disconnectWebSocket(message) {
         const socket = state.socket;
         state.socket = null;
@@ -1381,11 +1751,16 @@ export function renderHomePage(): string {
           if (message.type === "view" || message.type === "operationApplied") {
             state.view = message.view;
             state.stateVector = message.stateVector || state.stateVector;
+            state.policyVersion = message.policyVersion || state.policyVersion;
             if (message.type === "operationApplied" && message.operationId) {
               removeQueuedOperations([message.operationId]);
             }
-            render();
-            setStatus("WebSocket 已更新视图");
+            refreshSession()
+              .catch((error) => setStatus(error.message))
+              .finally(() => {
+                render();
+                setStatus("WebSocket 已更新视图");
+              });
           }
           if (message.type === "error") setStatus(message.error.message);
         };

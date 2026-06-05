@@ -1,9 +1,11 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { User, UserId } from "../types";
 import type { CollaborationContext, SessionInfo } from "./types";
 
 const TOKEN_BYTES = 32;
+const PASSWORD_SALT_BYTES = 16;
+const PASSWORD_KEY_LENGTH = 64;
 
 export class AuthenticationError extends Error {
   constructor(message: string) {
@@ -78,7 +80,9 @@ export function requireAdmin(user: User): void {
 
 export function rotatePolicyVersion(context: CollaborationContext): void {
   context.policyVersion += 1;
-  context.sessions.clear();
+  for (const session of context.sessions.values()) {
+    session.policyVersion = context.policyVersion;
+  }
 }
 
 export function getBearerToken(request: IncomingMessage): string | null {
@@ -91,3 +95,21 @@ export function getBearerToken(request: IncomingMessage): string | null {
   return match ? match[1] : null;
 }
 
+export function hashPassword(password: string): string {
+  const salt = randomBytes(PASSWORD_SALT_BYTES).toString("base64url");
+  const hash = scryptSync(password, salt, PASSWORD_KEY_LENGTH).toString("base64url");
+  return `scrypt$${salt}$${hash}`;
+}
+
+export function verifyPassword(password: string, storedHash: string): boolean {
+  const [algorithm, salt, hash] = storedHash.split("$");
+
+  if (algorithm !== "scrypt" || !salt || !hash) {
+    return false;
+  }
+
+  const expected = Buffer.from(hash, "base64url");
+  const actual = scryptSync(password, salt, expected.length);
+
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
