@@ -127,6 +127,8 @@ describe("collaboration server", () => {
     expect(html).toContain("multi-select");
     expect(html).toContain("multi-select-check");
     expect(html).toContain("点击下拉项可多选，✓ 表示已授权");
+    expect(html).toContain("event.preventDefault()");
+    expect(html).toContain("selectedUserIds.delete(user.id)");
     expect(html).toContain("node.children && node.children.length > 0");
     expect(html).toContain("无高级授权");
     expect(html).toContain("所有人");
