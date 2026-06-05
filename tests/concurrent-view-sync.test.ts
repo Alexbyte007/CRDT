@@ -179,6 +179,7 @@ describe("concurrent heterogeneous view sync", () => {
     const context: CollaborationContext = {
       crdt,
       users: new Map(sampleUsers.map((candidate) => [candidate.id, candidate])),
+      accounts: new Map(),
       now: () => 5,
       processedOperationIds: new Set(),
       sessions: new Map(),
@@ -230,6 +231,7 @@ describe("concurrent heterogeneous view sync", () => {
     const context: CollaborationContext = {
       crdt,
       users: new Map(sampleUsers.map((candidate) => [candidate.id, candidate])),
+      accounts: new Map(),
       now: () => 8,
       processedOperationIds: new Set(),
       sessions: new Map(),
@@ -293,6 +295,7 @@ describe("concurrent heterogeneous view sync", () => {
     const context: CollaborationContext = {
       crdt,
       users: new Map(sampleUsers.map((candidate) => [candidate.id, candidate])),
+      accounts: new Map(),
       now: () => 12,
       processedOperationIds: new Set(),
       sessions: new Map(),

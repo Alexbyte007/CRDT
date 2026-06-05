@@ -319,8 +319,12 @@ export function renderHomePage(): string {
         z-index: 50;
       }
 
+      .hidden {
+        display: none !important;
+      }
+        
       .modal.hidden {
-        display: none;
+        display: none !important;
       }
 
       .modal-card {
@@ -419,20 +423,56 @@ export function renderHomePage(): string {
 
     <div class="login-screen">
       <section class="login-panel stack">
-        <div>
-          <h2 class="login-title">登录协同空间</h2>
-          <p class="login-copy">选择一个演示账号登录。登录后服务端会签发会话 token，所有视图和编辑操作都按会话身份校验。</p>
+        <h2 class="login-title">登录协同空间</h2>
+        <p class="login-copy">请输入用户名和密码登录。也可以注册普通访客账号。</p>
+
+        <div id="loginPanel" class="stack">
+          <div>
+            <label for="loginUsername">用户名</label>
+            <input id="loginUsername" autocomplete="username" placeholder="例如：admin" />
+          </div>
+          <div>
+            <label for="loginPassword">密码</label>
+            <input id="loginPassword" type="password" autocomplete="current-password" placeholder="请输入密码" />
+          </div>
+
+          <div class="toolbar">
+            <button id="login">登录</button>
+            <button id="showRegister" class="secondary" type="button">注册账号</button>
+          </div>
+
+          <div class="hint">
+            测试账号：
+            管理员 admin / admin123；
+            研发经理 manager / manager123；
+            研发人员 member / member123；
+            访客 guest / guest123。
+          </div>
         </div>
-        <div>
-          <label for="loginUser">登录用户</label>
-          <select id="loginUser">
-            <option value="u-admin">管理员 / admin / all</option>
-            <option value="u-dev-manager">研发经理 / manager / dev</option>
-            <option value="u-dev-member">研发成员 / member / dev</option>
-            <option value="u-guest">访客 / guest / external</option>
-          </select>
+
+        <div id="registerPanel" class="stack hidden">
+          <div>
+            <label for="registerUsername">用户名</label>
+            <input id="registerUsername" autocomplete="username" />
+          </div>
+          <div>
+            <label for="registerDisplayName">显示名称</label>
+            <input id="registerDisplayName" />
+          </div>
+          <div>
+            <label for="registerPassword">密码</label>
+            <input id="registerPassword" type="password" autocomplete="new-password" />
+          </div>
+          <div>
+            <label for="registerConfirmPassword">确认密码</label>
+            <input id="registerConfirmPassword" type="password" autocomplete="new-password" />
+          </div>
+          <div class="toolbar">
+            <button id="register" type="button">提交注册</button>
+            <button id="hideRegister" class="secondary" type="button">取消</button>
+          </div>
         </div>
-        <button id="login">登录</button>
+
         <div class="status" id="loginStatus"></div>
       </section>
     </div>
@@ -515,7 +555,17 @@ export function renderHomePage(): string {
       };
 
       const els = {
-        loginUser: document.querySelector("#loginUser"),
+        loginPanel: document.querySelector("#loginPanel"),
+        loginUsername: document.querySelector("#loginUsername"),
+        loginPassword: document.querySelector("#loginPassword"),
+        showRegister: document.querySelector("#showRegister"),
+        hideRegister: document.querySelector("#hideRegister"),
+        registerPanel: document.querySelector("#registerPanel"),
+        registerUsername: document.querySelector("#registerUsername"),
+        registerDisplayName: document.querySelector("#registerDisplayName"),
+        registerPassword: document.querySelector("#registerPassword"),
+        registerConfirmPassword: document.querySelector("#registerConfirmPassword"),
+        register: document.querySelector("#register"),
         login: document.querySelector("#login"),
         loginStatus: document.querySelector("#loginStatus"),
         logout: document.querySelector("#logout"),
@@ -547,7 +597,7 @@ export function renderHomePage(): string {
       let noticeDialogResolver = null;
 
       function currentUserId() {
-        return state.user ? state.user.id : els.loginUser.value;
+        return state.user ? state.user.id : "";
       }
 
       function setStatus(text) {
@@ -556,6 +606,17 @@ export function renderHomePage(): string {
 
       function setLoginStatus(text) {
         els.loginStatus.textContent = text;
+      }
+
+      function clearRegisterForm() {
+        els.registerUsername.value = "";
+        els.registerDisplayName.value = "";
+        els.registerPassword.value = "";
+        els.registerConfirmPassword.value = "";
+      }
+
+      function clearLoginPassword() {
+        els.loginPassword.value = "";
       }
 
       function loadStoredOfflineQueue() {
@@ -601,7 +662,10 @@ export function renderHomePage(): string {
         const body = await requestJson("/api/login", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ userId: els.loginUser.value })
+          body: JSON.stringify({
+            username: els.loginUsername.value,
+            password: els.loginPassword.value
+          })
         });
         state.token = body.token;
         state.user = body.user;
@@ -634,6 +698,13 @@ export function renderHomePage(): string {
           state.offline.connected = false;
           clearAllAutoSaveTimers();
           state.editing.drafts = {};
+
+          els.registerPanel.classList.add("hidden");
+          els.loginPanel.classList.remove("hidden");
+          els.loginPassword.value = "";
+          els.registerPassword.value = "";
+          els.registerConfirmPassword.value = "";
+          
           render();
           setLoginStatus("已登出");
         }
@@ -660,12 +731,48 @@ export function renderHomePage(): string {
         state.policyVersion = body.policyVersion || state.policyVersion;
       }
 
+      async function registerAccount() {
+        setLoginStatus("正在注册...");
+        const body = await requestJson("/api/register", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            username: els.registerUsername.value,
+            displayName: els.registerDisplayName.value,
+            password: els.registerPassword.value,
+            confirmPassword: els.registerConfirmPassword.value
+          })
+        });
+
+        state.token = body.token;
+        state.user = body.user;
+        state.policyVersion = body.policyVersion || 0;
+
+        clearRegisterForm();
+        clearLoginPassword();
+
+        els.registerPanel.classList.add("hidden");
+        els.loginPanel.classList.remove("hidden");
+
+        clearAllAutoSaveTimers();
+        state.editing.drafts = {};
+        setLoginStatus("");
+        setStatus("已注册并登录：" + state.user.name);
+        await loadView();
+        render();
+        connectWebSocket();
+      }
+
       function render() {
         const focus = captureEditorFocus();
         document.body.className = state.user ? "app-mode" : "login-mode";
-        els.headerSession.textContent = state.user
-          ? state.user.name + " / " + state.user.role
-          : "未登录";
+        if (state.user) {
+          els.headerSession.classList.remove("hidden");
+          els.headerSession.textContent = state.user.name + " / " + state.user.role;
+        } else {
+          els.headerSession.classList.add("hidden");
+          els.headerSession.textContent = "";
+        }
         els.tree.innerHTML = "";
         renderSyncState();
         if (!state.view) return;
@@ -1355,6 +1462,23 @@ export function renderHomePage(): string {
           closeNoticeDialog();
         }
       });
+
+      els.showRegister.addEventListener("click", () => {
+        els.loginPanel.classList.add("hidden");
+        els.registerPanel.classList.remove("hidden");
+        setLoginStatus("");
+      });
+
+      els.hideRegister.addEventListener("click", () => {
+        clearRegisterForm();
+        els.registerPanel.classList.add("hidden");
+        els.loginPanel.classList.remove("hidden");
+        setLoginStatus("");
+      });
+
+      els.register.addEventListener("click", () =>
+        registerAccount().catch((error) => setLoginStatus(error.message))
+      );
 
       function disconnectWebSocket(message) {
         const socket = state.socket;
