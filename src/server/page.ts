@@ -1171,13 +1171,16 @@ export function renderHomePage(): string {
               "</span><span class=\\\"multi-select-check\\\">" +
               (selectedUserIds.has(user.id) ? "✓" : "") +
               "</span>";
-            option.addEventListener("click", () => {
+            option.addEventListener("click", (event) => {
+              event.preventDefault();
+              event.stopPropagation();
               if (selectedUserIds.has(user.id)) {
                 selectedUserIds.delete(user.id);
               } else {
                 selectedUserIds.add(user.id);
               }
               renderMenu();
+              details.open = true;
               onChange(Array.from(selectedUserIds));
             });
             menu.appendChild(option);
