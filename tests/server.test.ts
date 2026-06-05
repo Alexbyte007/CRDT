@@ -110,8 +110,9 @@ describe("collaboration server", () => {
     expect(html).toContain("登录协同空间");
     expect(html).toContain("login-screen");
     expect(html).toContain("删除");
-    expect(html).toContain("联网");
-    expect(html).toContain("断网");
+    expect(html).toContain("模拟断网");
+    expect(html).toContain("恢复联网");
+    expect(html).toContain("toggleSimulatedNetwork");
     expect(html).toContain("登录");
     expect(html).toContain("deleteNode");
     expect(html).toContain("deleteNodeKeepChildren");
