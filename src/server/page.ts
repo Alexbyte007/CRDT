@@ -331,9 +331,133 @@ export function renderHomePage(): string {
     }
     .node-actions { display: flex; flex-wrap: wrap; gap: 8px; }
     .node-actions button { width: auto; padding: 6px 12px; font-size: 12px; }
-    .node-content {
-      white-space: pre-wrap; color: var(--text); font-size: 14px; line-height: 1.65;
-      padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2);
+    .node-markdown-preview {
+      display: grid; gap: 10px; padding: 12px 14px;
+      border: 1px solid var(--line); border-radius: 16px; background: var(--surface-2);
+      box-shadow: 0 10px 24px rgba(35,45,90,.05);
+    }
+    .node-markdown-preview-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      color: var(--muted); font-size: 12px; font-weight: 800;
+    }
+    .node-markdown-preview-head .btn { width: auto; padding: 6px 10px; font-size: 12px; }
+    .node-markdown-preview-body {
+      max-height: 220px; overflow: auto; padding-right: 4px;
+    }
+    .markdown-empty {
+      margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6;
+    }
+    .markdown-drawer-backdrop {
+      position: fixed; inset: 0; z-index: 60; display: flex; justify-content: flex-end;
+      padding: 18px; background: rgba(15, 23, 42, .28);
+      animation: markdownBackdropIn .18s ease both;
+    }
+    .markdown-drawer-backdrop.hidden { display: none !important; }
+    .markdown-drawer {
+      width: min(880px, calc(100vw - 36px)); height: calc(100vh - 36px);
+      display: grid; grid-template-rows: auto auto minmax(0, 1fr);
+      overflow: hidden; border: 1px solid var(--line); border-radius: 24px;
+      background: var(--surface-solid); box-shadow: var(--shadow);
+      animation: markdownDrawerIn .24s cubic-bezier(.2,.8,.2,1) both;
+    }
+    .markdown-drawer-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 14px;
+      padding: 16px 18px; border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--surface-solid) 92%, var(--surface-2));
+    }
+    .markdown-drawer-title { min-width: 0; display: grid; gap: 3px; }
+    .markdown-drawer-title h2 {
+      margin: 0; color: var(--text); font-size: 16px; line-height: 1.35; overflow-wrap: anywhere;
+    }
+    .markdown-drawer-title span { color: var(--muted); font-size: 12px; }
+    .markdown-drawer-actions { display: flex; align-items: center; gap: 8px; }
+    .markdown-mode-tabs {
+      display: inline-flex; align-items: center; padding: 3px; gap: 3px;
+      border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2);
+    }
+    .markdown-mode-tabs button,
+    .markdown-tool-btn {
+      width: auto; min-width: 34px; min-height: 32px; border: 0; border-radius: 999px;
+      padding: 6px 10px; color: var(--muted); background: transparent; font-weight: 800;
+      cursor: pointer; transition: background .18s ease, color .18s ease, transform .18s ease;
+    }
+    .markdown-mode-tabs button:hover,
+    .markdown-tool-btn:hover { color: var(--brand); background: rgba(79,70,229,.10); }
+    .markdown-mode-tabs button.active {
+      color: var(--brand); background: var(--surface-solid); box-shadow: 0 6px 16px rgba(35,45,90,.08);
+    }
+    .markdown-tool-btn:active { transform: translateY(1px); }
+    .markdown-editor-toolbar {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+      padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface-solid);
+    }
+    .markdown-toolbar-divider {
+      width: 1px; height: 24px; background: var(--line); margin: 0 2px;
+    }
+    .markdown-editor-grid {
+      min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      background: var(--surface-solid);
+    }
+    .markdown-editor-grid.write-only,
+    .markdown-editor-grid.preview-only { grid-template-columns: minmax(0, 1fr); }
+    .markdown-editor-pane,
+    .markdown-preview-pane { min-height: 0; overflow: auto; }
+    .markdown-editor-pane.hidden,
+    .markdown-preview-pane.hidden { display: none; }
+    .markdown-preview-pane {
+      border-left: 1px solid var(--line); background: color-mix(in srgb, var(--surface-solid) 88%, var(--surface-2));
+    }
+    .markdown-editor-grid.preview-only .markdown-preview-pane { border-left: 0; }
+    .markdown-editor-textarea {
+      display: block; width: 100%; height: 100%; min-height: 480px; box-sizing: border-box;
+      border: 0; border-radius: 0; resize: none; outline: none; background: var(--surface-solid);
+      color: var(--text); padding: 18px 20px; font-family: var(--mono); font-size: 14px; line-height: 1.75;
+    }
+    .markdown-editor-textarea:focus { box-shadow: inset 0 0 0 2px rgba(79,70,229,.38); }
+    .markdown-body {
+      color: var(--text); font-size: 14px; line-height: 1.68; overflow-wrap: anywhere;
+    }
+    .markdown-preview-pane .markdown-body { padding: 18px 20px; }
+    .markdown-body > *:first-child { margin-top: 0; }
+    .markdown-body > *:last-child { margin-bottom: 0; }
+    .markdown-body h1,
+    .markdown-body h2,
+    .markdown-body h3 { margin: 18px 0 10px; line-height: 1.28; color: var(--text); }
+    .markdown-body h1 { font-size: 24px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+    .markdown-body h2 { font-size: 20px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+    .markdown-body h3 { font-size: 16px; }
+    .markdown-body p { margin: 9px 0; }
+    .markdown-body ul,
+    .markdown-body ol { margin: 9px 0; padding-left: 24px; }
+    .markdown-body li { margin: 4px 0; }
+    .markdown-body blockquote {
+      margin: 12px 0; padding: 8px 12px; border-left: 4px solid var(--brand);
+      color: var(--muted); background: rgba(79,70,229,.08); border-radius: 0 12px 12px 0;
+    }
+    .markdown-body code {
+      padding: 2px 5px; border-radius: 6px; background: rgba(99,102,241,.12);
+      color: var(--brand); font-family: var(--mono); font-size: .92em;
+    }
+    .markdown-body pre {
+      margin: 12px 0; overflow: auto; padding: 12px 14px; border: 1px solid var(--line);
+      border-radius: 14px; background: #0f172a; color: #e2e8f0;
+    }
+    .markdown-body pre code {
+      padding: 0; border-radius: 0; background: transparent; color: inherit;
+    }
+    .markdown-body table {
+      width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px;
+    }
+    .markdown-body th,
+    .markdown-body td { border: 1px solid var(--line); padding: 7px 9px; text-align: left; }
+    .markdown-body th { background: var(--surface-2); }
+    @keyframes markdownBackdropIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes markdownDrawerIn {
+      from { opacity: 0; transform: translateX(24px); }
+      to { opacity: 1; transform: translateX(0); }
     }
     .node textarea { min-height: 88px; resize: vertical; }
     .node-policy {
@@ -432,6 +556,13 @@ export function renderHomePage(): string {
       .node-kind { width: 36px; height: 36px; border-radius: 12px; font-size: 11px; }
       .node-detail-inner { padding: 12px; }
       .node-policy { grid-template-columns: 1fr; max-width: none; }
+      .markdown-drawer-backdrop { padding: 10px; }
+      .markdown-drawer { width: calc(100vw - 20px); height: calc(100vh - 20px); border-radius: 18px; }
+      .markdown-drawer-head { align-items: stretch; flex-direction: column; }
+      .markdown-drawer-actions { justify-content: space-between; }
+      .markdown-editor-grid { grid-template-columns: 1fr; }
+      .markdown-preview-pane { border-left: 0; border-top: 1px solid var(--line); }
+      .markdown-editor-textarea { min-height: 360px; }
     }
     </style>
   </head>
@@ -504,7 +635,7 @@ export function renderHomePage(): string {
 
         <div class="nav-list">
           <button class="nav-item" id="refresh"><span>⟳</span>刷新视图</button>
-          <button class="nav-item" id="connect"><span>⚡</span>联网</button>
+          <button class="nav-item" id="connect"><span>⚡</span>模拟断网</button>
           <button class="nav-item" id="syncOffline"><span>↥</span>同步离线操作</button>
         </div>
         <div class="status" id="status" style="color: var(--muted); font-size: 12px; margin-top: 8px;"></div>
@@ -606,6 +737,10 @@ export function renderHomePage(): string {
       </div>
     </div>
 
+    <div id="markdownDrawerBackdrop" class="markdown-drawer-backdrop hidden" aria-hidden="true">
+      <aside id="markdownEditorDrawer" class="markdown-drawer" role="dialog" aria-modal="true" aria-labelledby="markdownDrawerTitle"></aside>
+    </div>
+
 <script>
       const state = {
         token: "",
@@ -623,8 +758,13 @@ export function renderHomePage(): string {
           expandedDetailNodeIds: {},
           expandedTreeNodeIds: {}
         },
+        markdownEditor: {
+          activeNodeId: null,
+          mode: "write"
+        },
         offline: {
           connected: false,
+          simulated: false,
           queue: loadStoredOfflineQueue()
         },
         localLog: [],
@@ -670,6 +810,8 @@ export function renderHomePage(): string {
         noticeDialogTitle: document.querySelector("#noticeDialogTitle"),
         noticeDialogCopy: document.querySelector("#noticeDialogCopy"),
         noticeDialogOk: document.querySelector("#noticeDialogOk"),
+        markdownDrawerBackdrop: document.querySelector("#markdownDrawerBackdrop"),
+        markdownEditorDrawer: document.querySelector("#markdownEditorDrawer"),
         localLogList: document.querySelector("#localLogList"),
         remoteLogList: document.querySelector("#remoteLogList")
       };
@@ -743,6 +885,7 @@ export function renderHomePage(): string {
           state.socket.close();
           state.socket = null;
         }
+        state.offline.simulated = false;
         state.token = "";
         setLoginStatus("正在登录...");
         const body = await requestJson("/api/login", {
@@ -782,8 +925,10 @@ export function renderHomePage(): string {
           state.view = null;
           state.stateVector = "";
           state.offline.connected = false;
+          state.offline.simulated = false;
           clearAllAutoSaveTimers();
           state.editing.drafts = {};
+          state.markdownEditor.activeNodeId = null;
 
           els.registerPanel.classList.add("hidden");
           els.loginPanel.classList.remove("hidden");
@@ -901,10 +1046,15 @@ export function renderHomePage(): string {
         renderUserManagement();
         renderSyncState();
         renderLogs();
-        if (!state.view) return;
+        if (!state.view) {
+          renderMarkdownEditorDrawer();
+          restoreEditorFocus(focus);
+          return;
+        }
         for (const root of state.view.roots) {
           els.tree.appendChild(renderNode(root, 0));
         }
+        renderMarkdownEditorDrawer();
         restoreEditorFocus(focus);
       }
 
@@ -914,16 +1064,18 @@ export function renderHomePage(): string {
           ? state.user.name + " / " + state.user.role + " / " + state.user.department
           : "未登录";
         els.policyVersion.textContent = state.policyVersion ? String(state.policyVersion) : "-";
-        els.connectionState.textContent = isSocketActive()
-          ? state.offline.connected
-            ? "已连接"
-            : "连接中"
-          : "离线";
+        els.connectionState.textContent = state.offline.simulated
+          ? "模拟离线"
+          : isSocketActive()
+            ? state.offline.connected
+              ? "已连接"
+              : "连接中"
+            : "离线";
         els.queueLength.textContent = String(currentQueue.length);
         els.syncOffline.disabled = !state.token || currentQueue.length === 0;
         els.refresh.disabled = !state.token;
         els.connect.disabled = !state.token;
-        els.connect.textContent = isSocketActive() ? "断网" : "联网";
+        els.connect.textContent = state.offline.simulated ? "恢复联网" : "模拟断网";
       }
 
       function renderUserManagement() {
@@ -1084,6 +1236,350 @@ export function renderHomePage(): string {
         return "文档";
       }
 
+      function findNodeById(nodeId, nodes) {
+        for (const node of nodes || []) {
+          if (node.id === nodeId) return node;
+          const found = findNodeById(nodeId, node.children || []);
+          if (found) return found;
+        }
+        return null;
+      }
+
+      function activeMarkdownNode() {
+        if (!state.view || !state.markdownEditor.activeNodeId) return null;
+        return findNodeById(state.markdownEditor.activeNodeId, state.view.roots);
+      }
+
+      function openMarkdownEditor(nodeId) {
+        state.markdownEditor.activeNodeId = nodeId;
+        if (!state.markdownEditor.mode) {
+          state.markdownEditor.mode = "write";
+        }
+        renderMarkdownEditorDrawer();
+        window.requestAnimationFrame(() => {
+          const editor = document.querySelector("#markdownContentEditor");
+          if (editor) editor.focus();
+        });
+      }
+
+      function closeMarkdownEditor() {
+        const node = activeMarkdownNode();
+        if (node) {
+          autoSaveNode(node.id).catch((error) => setStatus(error.message));
+        }
+        state.markdownEditor.activeNodeId = null;
+        renderMarkdownEditorDrawer();
+      }
+
+      function setMarkdownEditorMode(mode) {
+        state.markdownEditor.mode = mode;
+        renderMarkdownEditorDrawer();
+      }
+
+      function appendMarkdownPreview(container, node, draft) {
+        if (!node.permissions.canEditContent && !draft.content) return;
+
+        const preview = document.createElement("div");
+        preview.className = "node-markdown-preview";
+        preview.dataset.nodeId = node.id;
+
+        const head = document.createElement("div");
+        head.className = "node-markdown-preview-head";
+        const label = document.createElement("span");
+        label.textContent = node.permissions.canEditContent ? "Markdown 文档" : "Markdown 预览";
+        head.appendChild(label);
+
+        if (node.permissions.canEditContent) {
+          const editButton = document.createElement("button");
+          editButton.type = "button";
+          editButton.className = "btn small secondary";
+          editButton.textContent = "编辑 Markdown";
+          editButton.addEventListener("click", (event) => {
+            event.stopPropagation();
+            openMarkdownEditor(node.id);
+          });
+          head.appendChild(editButton);
+        }
+        preview.appendChild(head);
+
+        const body = document.createElement("div");
+        body.className = "markdown-body node-markdown-preview-body";
+        body.innerHTML = markdownToHtml(draft.content);
+        preview.appendChild(body);
+        container.appendChild(preview);
+      }
+
+      function renderMarkdownEditorDrawer() {
+        if (!els.markdownDrawerBackdrop || !els.markdownEditorDrawer) return;
+
+        const node = activeMarkdownNode();
+        if (!node) {
+          state.markdownEditor.activeNodeId = null;
+          els.markdownDrawerBackdrop.classList.add("hidden");
+          els.markdownDrawerBackdrop.setAttribute("aria-hidden", "true");
+          els.markdownEditorDrawer.innerHTML = "";
+          return;
+        }
+
+        const draft = getNodeDraft(node);
+        const canEdit = Boolean(node.permissions.canEditContent);
+        const mode = canEdit ? state.markdownEditor.mode || "write" : "preview";
+        const showEditor = canEdit && mode !== "preview";
+        const showPreview = mode !== "write";
+        const gridClass =
+          mode === "write" ? " write-only" : mode === "preview" ? " preview-only" : "";
+
+        els.markdownDrawerBackdrop.classList.remove("hidden");
+        els.markdownDrawerBackdrop.setAttribute("aria-hidden", "false");
+        els.markdownEditorDrawer.innerHTML =
+          '<div class="markdown-drawer-head">' +
+            '<div class="markdown-drawer-title">' +
+              '<h2 id="markdownDrawerTitle">' + escapeHtml(draft.title || node.title || "未命名节点") + '</h2>' +
+              '<span>' + escapeHtml(node.id) + ' / ' + escapeHtml(nodeTypeLabel(node.type)) + '</span>' +
+            '</div>' +
+            '<div class="markdown-drawer-actions">' +
+              '<div id="markdownEditorMode" class="markdown-mode-tabs" aria-label="Markdown 视图模式">' +
+                '<button type="button" data-markdown-mode="write" class="' + (mode === "write" ? "active" : "") + '"' + (!canEdit ? " disabled" : "") + '>Write</button>' +
+                '<button type="button" data-markdown-mode="preview" class="' + (mode === "preview" ? "active" : "") + '>Preview</button>' +
+                '<button type="button" data-markdown-mode="split" class="' + (mode === "split" ? "active" : "") + '"' + (!canEdit ? " disabled" : "") + '>Split</button>' +
+              '</div>' +
+              '<button type="button" class="btn small secondary" data-md-close>关闭</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="markdown-editor-toolbar" aria-label="Markdown 工具栏">' +
+            '<button type="button" class="markdown-tool-btn" title="标题" data-md-insert="# ">H</button>' +
+            '<button type="button" class="markdown-tool-btn" title="加粗" data-md-wrap="**">B</button>' +
+            '<button type="button" class="markdown-tool-btn" title="斜体" data-md-wrap="_">I</button>' +
+            '<button type="button" class="markdown-tool-btn" title="引用" data-md-insert="&gt; ">Quote</button>' +
+            '<button type="button" class="markdown-tool-btn" title="行内代码" data-md-wrap="&#96;">Code</button>' +
+            '<button type="button" class="markdown-tool-btn" title="链接" data-md-insert="[标题](https://)">Link</button>' +
+            '<span class="markdown-toolbar-divider" aria-hidden="true"></span>' +
+            '<button type="button" class="markdown-tool-btn" title="无序列表" data-md-insert="- ">List</button>' +
+            '<button type="button" class="markdown-tool-btn" title="有序列表" data-md-insert="1. ">1.</button>' +
+            '<button type="button" class="markdown-tool-btn" title="任务列表" data-md-insert="- [ ] ">Task</button>' +
+            '<button type="button" class="markdown-tool-btn" title="代码块" data-md-action="code-block">Block</button>' +
+          '</div>' +
+          '<div class="markdown-editor-grid' + gridClass + '">' +
+            '<section class="markdown-editor-pane' + (showEditor ? "" : " hidden") + '">' +
+              '<textarea id="markdownContentEditor" class="markdown-editor-textarea" data-node-id="' + escapeHtml(node.id) + '" data-field="content" spellcheck="false" placeholder="用 Markdown 记录节点说明、任务拆解、接口草稿或协作笔记...">' + escapeHtml(draft.content) + '</textarea>' +
+            '</section>' +
+            '<section class="markdown-preview-pane' + (showPreview ? "" : " hidden") + '" aria-label="Markdown 预览">' +
+              '<div id="markdownLivePreview" class="markdown-body">' + markdownToHtml(draft.content) + '</div>' +
+            '</section>' +
+          '</div>';
+
+        bindMarkdownEditorDrawer(node, canEdit);
+      }
+
+      function bindMarkdownEditorDrawer(node, canEdit) {
+        els.markdownDrawerBackdrop.onclick = (event) => {
+          if (event.target === els.markdownDrawerBackdrop) closeMarkdownEditor();
+        };
+
+        const closeButton = els.markdownEditorDrawer.querySelector("[data-md-close]");
+        if (closeButton) {
+          closeButton.addEventListener("click", closeMarkdownEditor);
+        }
+
+        for (const button of els.markdownEditorDrawer.querySelectorAll("[data-markdown-mode]")) {
+          button.addEventListener("click", () => {
+            if (button.disabled) return;
+            setMarkdownEditorMode(button.dataset.markdownMode);
+          });
+        }
+
+        els.markdownEditorDrawer.onkeydown = (event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            closeMarkdownEditor();
+            return;
+          }
+          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+            event.preventDefault();
+            autoSaveNode(node.id).catch((error) => setStatus(error.message));
+          }
+        };
+
+        const editor = els.markdownEditorDrawer.querySelector("#markdownContentEditor");
+        if (!canEdit || !editor) return;
+
+        editor.addEventListener("input", () => {
+          getNodeDraft(node).content = editor.value;
+          scheduleAutoSave(node.id);
+          refreshMarkdownPreview(node.id, editor.value);
+        });
+        editor.addEventListener("blur", () => autoSaveNode(node.id).catch((error) => setStatus(error.message)));
+
+        for (const button of els.markdownEditorDrawer.querySelectorAll("[data-md-insert]")) {
+          button.addEventListener("click", () => {
+            insertMarkdownAtCursor(button.getAttribute("data-md-insert") || "");
+          });
+        }
+
+        for (const button of els.markdownEditorDrawer.querySelectorAll("[data-md-wrap]")) {
+          button.addEventListener("click", () => {
+            wrapMarkdownSelection(button.getAttribute("data-md-wrap") || "");
+          });
+        }
+
+        const codeBlockButton = els.markdownEditorDrawer.querySelector('[data-md-action="code-block"]');
+        if (codeBlockButton) {
+          codeBlockButton.addEventListener("click", () => {
+            const fence = String.fromCharCode(96) + String.fromCharCode(96) + String.fromCharCode(96);
+            insertMarkdownAtCursor(fence + "\\ncode\\n" + fence, 4, 4);
+          });
+        }
+      }
+
+      function insertMarkdownAtCursor(text, selectOffset = null, selectLength = 0) {
+        const editor = document.querySelector("#markdownContentEditor");
+        if (!editor) return;
+        const start = editor.selectionStart || 0;
+        const end = editor.selectionEnd || start;
+        const before = editor.value.slice(0, start);
+        const after = editor.value.slice(end);
+        const prefix = before && !before.endsWith("\\n") ? "\\n" : "";
+        const suffix = after && !text.endsWith("\\n") ? "\\n" : "";
+        editor.value = before + prefix + text + suffix + after;
+        const cursorStart = before.length + prefix.length + (selectOffset === null ? text.length : selectOffset);
+        const cursorEnd = selectOffset === null ? cursorStart : cursorStart + selectLength;
+        editor.focus();
+        editor.setSelectionRange(cursorStart, cursorEnd);
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+
+      function wrapMarkdownSelection(wrapper) {
+        const editor = document.querySelector("#markdownContentEditor");
+        if (!editor || !wrapper) return;
+        const start = editor.selectionStart || 0;
+        const end = editor.selectionEnd || start;
+        const selected = editor.value.slice(start, end);
+        const fallback = "文本";
+        const nextText = selected || fallback;
+        editor.value = editor.value.slice(0, start) + wrapper + nextText + wrapper + editor.value.slice(end);
+        const nextStart = start + wrapper.length;
+        const nextEnd = nextStart + nextText.length;
+        editor.focus();
+        editor.setSelectionRange(nextStart, nextEnd);
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+
+      function refreshMarkdownPreview(nodeId, markdown) {
+        const previewHtml = markdownToHtml(markdown);
+        const drawerPreview = document.querySelector("#markdownLivePreview");
+        if (drawerPreview) drawerPreview.innerHTML = previewHtml;
+        const nodePreview = els.tree.querySelector(
+          '.node[data-node-id="' + cssEscape(nodeId) + '"] .node-markdown-preview-body'
+        );
+        if (nodePreview) nodePreview.innerHTML = previewHtml;
+      }
+
+      function markdownToHtml(markdown) {
+        const source = String(markdown || "").replace(/\\r\\n/g, "\\n");
+        if (!source.trim()) {
+          return '<p class="markdown-empty">暂无内容，点击编辑 Markdown 开始记录。</p>';
+        }
+
+        const codeBlocks = [];
+        const fencePattern = new RegExp("\\\\x60\\\\x60\\\\x60(?:[a-zA-Z0-9_-]+)?\\\\n?([\\\\s\\\\S]*?)\\\\x60\\\\x60\\\\x60", "g");
+        const prepared = source.replace(fencePattern, (match, code) => {
+          const token = "::CODE_BLOCK_" + codeBlocks.length + "::";
+          codeBlocks.push("<pre><code>" + escapeHtml(String(code).replace(/\\n$/, "")) + "</code></pre>");
+          return "\\n\\n" + token + "\\n\\n";
+        });
+
+        const html = prepared
+          .split(/\\n{2,}/)
+          .map((block) => renderMarkdownBlock(block, codeBlocks))
+          .filter(Boolean)
+          .join("");
+
+        return html || '<p class="markdown-empty">暂无内容，点击编辑 Markdown 开始记录。</p>';
+      }
+
+      function renderMarkdownBlock(block, codeBlocks) {
+        const trimmed = block.trim();
+        if (!trimmed) return "";
+
+        const codeMatch = trimmed.match(/^::CODE_BLOCK_(\\d+)::$/);
+        if (codeMatch) return codeBlocks[Number(codeMatch[1])] || "";
+
+        const lines = trimmed.split("\\n");
+        if (lines.length >= 2 && looksLikeMarkdownTable(lines)) {
+          return renderMarkdownTable(lines);
+        }
+
+        const heading = trimmed.match(/^(#{1,3})\\s+(.+)$/);
+        if (heading) {
+          const level = heading[1].length;
+          return "<h" + level + ">" + renderInlineMarkdown(heading[2]) + "</h" + level + ">";
+        }
+
+        if (lines.every((line) => /^[-*]\\s+/.test(line.trim()))) {
+          return "<ul>" + lines.map((line) => "<li>" + renderInlineMarkdown(line.trim().replace(/^[-*]\\s+/, "")) + "</li>").join("") + "</ul>";
+        }
+
+        if (lines.every((line) => /^\\d+[.)]\\s+/.test(line.trim()))) {
+          return "<ol>" + lines.map((line) => "<li>" + renderInlineMarkdown(line.trim().replace(/^\\d+[.)]\\s+/, "")) + "</li>").join("") + "</ol>";
+        }
+
+        if (lines.every((line) => /^>\\s?/.test(line.trim()))) {
+          const quote = lines.map((line) => line.trim().replace(/^>\\s?/, "")).join("<br />");
+          return "<blockquote>" + renderInlineMarkdown(quote) + "</blockquote>";
+        }
+
+        return "<p>" + lines.map(renderInlineMarkdown).join("<br />") + "</p>";
+      }
+
+      function looksLikeMarkdownTable(lines) {
+        if (!lines[0].includes("|") || !lines[1].includes("|")) return false;
+        return /^\\s*\\|?\\s*:?-{3,}:?\\s*(\\|\\s*:?-{3,}:?\\s*)+\\|?\\s*$/.test(lines[1]);
+      }
+
+      function splitMarkdownTableRow(line) {
+        return line
+          .trim()
+          .replace(/^\\|/, "")
+          .replace(/\\|$/, "")
+          .split("|")
+          .map((cell) => cell.trim());
+      }
+
+      function renderMarkdownTable(lines) {
+        const headers = splitMarkdownTableRow(lines[0]);
+        const rows = lines.slice(2).map(splitMarkdownTableRow);
+        return (
+          "<table><thead><tr>" +
+          headers.map((header) => "<th>" + renderInlineMarkdown(header) + "</th>").join("") +
+          "</tr></thead><tbody>" +
+          rows
+            .map((row) => "<tr>" + row.map((cell) => "<td>" + renderInlineMarkdown(cell) + "</td>").join("") + "</tr>")
+            .join("") +
+          "</tbody></table>"
+        );
+      }
+
+      function renderInlineMarkdown(value) {
+        let text = escapeHtml(value);
+        text = text.replace(/\\x60([^\\x60]+)\\x60/g, "<code>$1</code>");
+        text = text.replace(/\\*\\*([^*]+)\\*\\*/g, "<strong>$1</strong>");
+        text = text.replace(/(^|\\s)_([^_]+)_/g, "$1<em>$2</em>");
+        text = text.replace(/\\[([^\\]]+)\\]\\(([^\\s)]+)\\)/g, (match, label, href) => {
+          const safeHref = safeMarkdownUrl(href);
+          if (!safeHref) return match;
+          return '<a href="' + escapeHtml(safeHref) + '" target="_blank" rel="noopener noreferrer">' + label + '</a>';
+        });
+        return text;
+      }
+
+      function safeMarkdownUrl(value) {
+        const url = String(value || "").trim();
+        if (/^https?:\\/\\//i.test(url) || url.startsWith("#") || url.startsWith("/")) {
+          return url;
+        }
+        return "";
+      }
+
       function renderNode(node, depth = 0) {
         const li = document.createElement("li");
         li.className = "tree-item";
@@ -1241,24 +1737,7 @@ export function renderHomePage(): string {
           detailInner.appendChild(policyPanel);
         }
 
-        if (node.permissions.canEditContent) {
-          const contentInput = document.createElement("textarea");
-          contentInput.value = draft.content;
-          contentInput.placeholder = "节点内容";
-          contentInput.dataset.nodeId = node.id;
-          contentInput.dataset.field = "content";
-          contentInput.addEventListener("input", () => {
-            getNodeDraft(node).content = contentInput.value;
-            scheduleAutoSave(node.id);
-          });
-          contentInput.addEventListener("blur", () => autoSaveNode(node.id).catch((error) => setStatus(error.message)));
-          detailInner.appendChild(contentInput);
-        } else if (node.content) {
-          const content = document.createElement("div");
-          content.className = "node-content";
-          content.textContent = node.content;
-          detailInner.appendChild(content);
-        }
+        appendMarkdownPreview(detailInner, node, draft);
 
         if (node.permissions.canAddChild || node.permissions.canDelete) {
           const actions = document.createElement("div");
@@ -1476,7 +1955,7 @@ export function renderHomePage(): string {
         if (!focus) return;
         const selector =
           '[data-node-id="' + cssEscape(focus.nodeId) + '"][data-field="' + cssEscape(focus.field) + '"]';
-        const next = els.tree.querySelector(selector);
+        const next = els.tree.querySelector(selector) || document.querySelector(selector);
         if (!next) return;
         next.focus();
         if (typeof next.setSelectionRange === "function") {
@@ -1894,9 +2373,11 @@ export function renderHomePage(): string {
                          operation.type === "updateAcl" ? "修改权限" : operation.type);
         pushLog("local", logTitle, JSON.stringify(operation));
         renderLogs();
-        if (isSocketOpen()) {
+        if (isSocketOpen() && !state.offline.simulated) {
           state.socket.send(JSON.stringify({ type: "operation", envelope }));
           setStatus("操作已发送，等待确认");
+        } else if (state.offline.simulated) {
+          setStatus("模拟离线中，操作已进入队列");
         } else {
           setStatus("WebSocket 离线，操作已进入队列");
         }
@@ -1993,12 +2474,31 @@ export function renderHomePage(): string {
           socket.close();
         }
         renderSyncState();
-        setStatus(message || "已切换为离线状态，后续操作会进入离线队列");
+        if (message) {
+          setStatus(message);
+        }
+      }
+
+      function toggleSimulatedNetwork() {
+        if (!state.token) return setStatus("请先登录");
+        if (state.offline.simulated) {
+          state.offline.simulated = false;
+          pushLog("local", "恢复联网", "准备重连 WebSocket 并同步离线队列");
+          renderLogs();
+          renderSyncState();
+          connectWebSocket();
+          return;
+        }
+        state.offline.simulated = true;
+        pushLog("local", "模拟断网", "已暂停 WebSocket 实时同步");
+        renderLogs();
+        disconnectWebSocket("已切换为模拟离线，后续操作会进入离线队列");
       }
 
       function connectWebSocket() {
         if (!state.token) return setStatus("请先登录");
-        if (isSocketActive()) return disconnectWebSocket();
+        if (state.offline.simulated) return setStatus("当前处于模拟离线，请先点击恢复联网");
+        if (isSocketActive()) return setStatus("WebSocket 已连接或正在连接");
         const protocol = location.protocol === "https:" ? "wss:" : "ws:";
         const socket = new WebSocket(protocol + "//" + location.host + "/ws?token=" + encodeURIComponent(state.token));
         state.socket = socket;
@@ -2040,7 +2540,9 @@ export function renderHomePage(): string {
           state.socket = null;
           state.offline.connected = false;
           renderSyncState();
-          setStatus("WebSocket 已断开");
+          if (!state.offline.simulated) {
+            setStatus("WebSocket 已断开");
+          }
         };
         socket.onerror = () => {
           if (state.socket !== socket) return;
@@ -2051,7 +2553,7 @@ export function renderHomePage(): string {
       }
 
       els.connect.addEventListener("click", () => {
-        connectWebSocket();
+        toggleSimulatedNetwork();
       });
 
       window.localStorage.removeItem("crdt-editor-session-token-v1");
