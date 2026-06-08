@@ -1,0 +1,14 @@
+services:
+  crdt-editor:
+    build: .
+    container_name: crdt-editor
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3001
+      DATABASE_PATH: /app/data/crdt.sqlite
+      DOC_ID: doc-sample
+    volumes:
+      - ./data:/app/data
