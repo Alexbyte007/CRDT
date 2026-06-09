@@ -203,14 +203,22 @@ export function renderHomePage(): string {
       box-shadow: 0 10px 20px rgba(35,45,90,.04);
     }
     .employee-log-item span {
+      grid-column: 1; grid-row: 1;
       color: var(--muted); font-family: var(--mono); font-size: 11px; line-height: 1.5;
     }
+    .employee-log-item small {
+      grid-column: 1; grid-row: 2;
+      color: var(--muted); font-size: 11px; line-height: 1.4; font-weight: 500;
+      overflow-wrap: anywhere;
+    }
     .employee-log-item strong {
+      grid-column: 2; grid-row: 1;
       min-width: 0; color: var(--text); font-size: 12px; line-height: 1.45; font-weight: 800;
       overflow-wrap: anywhere;
     }
     .employee-log-item em {
-      grid-column: 2; color: var(--muted); font-size: 11px; line-height: 1.45; font-style: normal;
+      grid-column: 2; grid-row: 2;
+      color: var(--muted); font-size: 11px; line-height: 1.45; font-style: normal;
       overflow-wrap: anywhere;
     }
     .employee-log-item.local { border-left-color: var(--brand); }
@@ -506,7 +514,7 @@ export function renderHomePage(): string {
     }
     .multi-select summary::-webkit-details-marker { display: none; }
     .multi-select-menu {
-      position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20; display: grid; gap: 2px;
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 9999; display: grid; gap: 2px;
       max-height: 220px; overflow: auto; padding: 6px; border: 1px solid var(--line); border-radius: 16px;
       background: var(--surface-solid); box-shadow: 0 12px 28px rgba(31, 41, 55, 0.14);
     }
@@ -664,14 +672,14 @@ export function renderHomePage(): string {
       </aside>
 
       <section class="content employee-content">
-        <div id="userManagement" class="section-card glass admin-panel hidden" aria-hidden="true" style="margin-bottom: 18px;">
+        <div id="userManagement" class="section-card glass admin-panel hidden" aria-hidden="true" style="margin-bottom: 18px; position: relative; z-index: 10;">
           <div class="section-head compact">
             <div>
               <h3>用户管理</h3>
               <p>管理系统中的用户角色与部门权限。</p>
             </div>
           </div>
-          <div class="user-table-wrap" style="overflow-x: auto; margin-top: 8px;">
+          <div class="user-table-wrap" style="margin-top: 8px;">
             <table class="user-table" style="width: 100%; font-size: 13px; border-collapse: collapse; text-align: left;">
               <thead>
                 <tr style="border-bottom: 1px solid var(--line);">
@@ -903,6 +911,11 @@ export function renderHomePage(): string {
         const response = await fetch(url, requestOptions);
         const body = await response.json();
         if (!response.ok || body.ok === false) {
+          const errorName = body.error ? body.error.name : "";
+          if (errorName === "AuthenticationError") {
+            logout();
+            throw new Error(body.error ? body.error.message : "登录已失效，请重新登录。");
+          }
           throw new Error(body.error ? body.error.message : "请求失败");
         }
         return body;
@@ -1050,6 +1063,7 @@ export function renderHomePage(): string {
 
         const normalized = {
           kind,
+          operator: entry.operator || "",
           title: entry.title || "记录操作",
           detail: entry.detail || "",
           time: entry.time || new Date().toLocaleTimeString("zh-CN", { hour12: false }),
@@ -1077,6 +1091,7 @@ export function renderHomePage(): string {
             const className = operationLogClassNames[entry.kind] || operationLogClassNames.local;
             return '<div class="' + escapeHtml(className) + '">' +
               '<span>' + escapeHtml(entry.time) + '</span>' +
+              (entry.operator ? '<small>' + escapeHtml(entry.operator) + '</small>' : '') +
               '<strong>' + escapeHtml(entry.title) + '</strong>' +
               (entry.detail ? '<em>' + escapeHtml(entry.detail) + '</em>' : '') +
               '</div>';
@@ -1206,12 +1221,26 @@ export function renderHomePage(): string {
         return (queue || state.offline.queue).find((envelope) => envelope.id === operationId) || null;
       }
 
+      function operationLabel(operationType) {
+        const labels = {
+          addNode: "新增子节点",
+          deleteNode: "删除节点",
+          deleteNodeKeepChildren: "删除节点（保留子节点）",
+          renameNode: "重命名节点",
+          updateContent: "修改节点内容",
+          updateAcl: "修改节点权限",
+          updateAttrs: "修改节点属性"
+        };
+        return labels[operationType] || ("执行操作「" + operationType + "」");
+      }
+
       function formatRemoteOperationMessage(message, envelope) {
         if (message.type === "operationApplied") {
           const summary = envelope && envelope.operation ? formatViewOperation(envelope.operation) : null;
           return {
             kind: "remote",
-            title: "服务端已合并本地操作",
+            operator: state.user ? state.user.name : "",
+            title: "服务端已合并本操作",
             detail: message.deduplicated
               ? "重复操作已跳过"
               : summary
@@ -1221,12 +1250,21 @@ export function renderHomePage(): string {
           };
         }
 
-        return {
-          kind: "remote",
-          title: "收到远端视图更新",
-          detail: "协同视图已刷新",
-          key: "remote:view:" + (message.stateVector || Date.now())
-        };
+        // view 类型：显示操作者身份
+        if (message.change) {
+          const c = message.change;
+          const desc = operationLabel(c.operationType);
+          return {
+            kind: "remote",
+            operator: c.userName,
+            title: desc,
+            detail: c.nodeTitle ? "目标: 「" + c.nodeTitle + "」" : (c.nodeId ? "节点: " + c.nodeId : ""),
+            key: "remote:view:" + (c.userId || "") + ":" + (c.operationType || "") + ":" + (message.stateVector || Date.now())
+          };
+        }
+
+        // 无 change 信息的 view 消息（如初始连接或 HTTP API 触发），不记录日志
+        return null;
       }
 
       function render() {
@@ -1309,13 +1347,16 @@ export function renderHomePage(): string {
 
       function renderRoleCell(user, adminCount) {
         const cell = document.createElement("td");
+        const isSelf = state.user && user.id === state.user.id;
+        const allOptions = [
+          { value: "guest", label: "访客" },
+          { value: "member", label: "研发人员" },
+          { value: "manager", label: "研发经理" },
+          { value: "admin", label: "管理员" }
+        ];
+        const roleOptions = isSelf ? allOptions : allOptions.filter((opt) => opt.value !== "admin");
         const roleSelect = createCustomSelect(
-          [
-            { value: "guest", label: "访客" },
-            { value: "member", label: "研发人员" },
-            { value: "manager", label: "研发经理" },
-            { value: "admin", label: "管理员" }
-          ],
+          roleOptions,
           user.role,
           async (newValue) => {
             const previousRole = user.role;
@@ -1992,11 +2033,11 @@ export function renderHomePage(): string {
         details.className = "multi-select";
         if (disabled) details.style.pointerEvents = "none";
         if (disabled) details.style.opacity = "0.6";
-        
+
         const summary = document.createElement("summary");
         const menu = document.createElement("div");
         menu.className = "multi-select-menu";
-        
+
         let currentValueState = currentValue;
 
         function renderMenu() {
@@ -2020,17 +2061,49 @@ export function renderHomePage(): string {
             menu.appendChild(btn);
           }
         }
-        
+
         renderMenu();
         details.appendChild(summary);
         details.appendChild(menu);
-        
+
+        // 下拉框互斥：同时只能打开一个
+        details.addEventListener("toggle", () => {
+          if (details.open) {
+            // 关闭用户管理区域其他下拉框
+            const userRows = document.querySelector("#userRows");
+            if (userRows) {
+              for (const other of userRows.querySelectorAll(".multi-select")) {
+                if (other !== details && other.open) {
+                  other.open = false;
+                }
+              }
+            }
+          }
+        });
+
+        // 点击页面其他地方关闭用户管理下拉框
+        if (!window.__customSelectGlobalClickBound) {
+          window.__customSelectGlobalClickBound = true;
+          document.addEventListener("click", (event) => {
+            const target = event.target;
+            if (!target || !target.closest) return;
+            if (target.closest(".multi-select")) return;
+            const userRows = document.querySelector("#userRows");
+            if (!userRows) return;
+            for (const detailsEl of userRows.querySelectorAll(".multi-select")) {
+              if (detailsEl.open) {
+                detailsEl.open = false;
+              }
+            }
+          });
+        }
+
         return {
           element: details,
           get value() { return currentValueState; },
           set value(v) { currentValueState = v; renderMenu(); },
-          set disabled(d) { 
-            disabled = d; 
+          set disabled(d) {
+            disabled = d;
             details.style.pointerEvents = d ? "none" : "auto";
             details.style.opacity = d ? "0.6" : "1";
           }
@@ -2576,6 +2649,7 @@ export function renderHomePage(): string {
         const summary = formatViewOperation(operation, customLogTitle);
         appendOperationLog({
           kind: "local",
+          operator: state.user ? state.user.name : "",
           title: summary.title,
           detail: summary.detail,
           coalesceKey: "local:" + operation.type + ":" + targetNodeIdFromOperation(operation)
@@ -2754,8 +2828,12 @@ export function renderHomePage(): string {
             if (message.type === "operationApplied" && message.operationId) {
               removeQueuedOperations([message.operationId]);
             }
-            appendOperationLog(formatRemoteOperationMessage(message, appliedEnvelope));
-            renderOperationLogs();
+            // 只记录有 change 信息的远端消息（跳过无操作者的通用广播）
+            const logEntry = formatRemoteOperationMessage(message, appliedEnvelope);
+            if (logEntry) {
+              appendOperationLog(logEntry);
+              renderOperationLogs();
+            }
             refreshSession()
               .catch((error) => setStatus(error.message))
               .finally(() => {
@@ -2772,6 +2850,9 @@ export function renderHomePage(): string {
             });
             renderOperationLogs();
             setStatus(message.error.message);
+            if (message.error.name === "AuthenticationError") {
+              logout();
+            }
           }
         };
         socket.onopen = async () => {
@@ -2785,10 +2866,15 @@ export function renderHomePage(): string {
             setStatus(error.message);
           }
         };
-        socket.onclose = () => {
+        socket.onclose = (event) => {
           if (state.socket !== socket) return;
           state.socket = null;
           state.offline.connected = false;
+          if (event.code === 4001) {
+            setLoginStatus("该账号已在其他地方登录，当前会话已失效。");
+            logout();
+            return;
+          }
           renderSyncState();
           if (!state.offline.simulated) {
             setStatus("WebSocket 已断开");

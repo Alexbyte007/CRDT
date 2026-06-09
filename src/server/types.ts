@@ -156,12 +156,21 @@ export type ClientMessage =
       type: "ping";
     };
 
+export interface ChangeInfo {
+  userId: string;
+  userName: string;
+  operationType: string;
+  nodeTitle?: string;
+  nodeId?: string;
+}
+
 export type ServerMessage =
   | {
       type: "view";
       view: UserView;
       stateVector: string;
       policyVersion: number;
+      change?: ChangeInfo;
     }
   | {
       type: "operationApplied";
@@ -170,6 +179,7 @@ export type ServerMessage =
       deduplicated?: boolean;
       stateVector: string;
       policyVersion: number;
+      change?: ChangeInfo;
     }
   | {
       type: "error";
