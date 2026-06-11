@@ -53,7 +53,15 @@ describe("concurrent heterogeneous view sync", () => {
     expect(snapshot.nodes["node-manager-add"]).toBeDefined();
     expect(snapshot.nodes["node-admin-add"]).toBeDefined();
     expect(new Set(snapshot.nodes["node-dev-plan"].children)).toEqual(
-      new Set(["node-module-a", "node-manager-add", "node-admin-add"])
+      new Set([
+        "node-module-a",
+        "node-offline-sync-task",
+        "node-privacy-view-task",
+        "node-delete-conflict-task",
+        "node-doc-cleanup-task",
+        "node-manager-add",
+        "node-admin-add"
+      ])
     );
   });
 

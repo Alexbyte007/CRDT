@@ -32,7 +32,15 @@ describe("privacy-aware conflict resolution", () => {
     const leftChildren = getNodeSnapshot(left, "node-dev-plan")?.children ?? [];
     const rightChildren = getNodeSnapshot(right, "node-dev-plan")?.children ?? [];
     expect(new Set(leftChildren)).toEqual(
-      new Set(["node-module-a", "node-concurrent-a", "node-concurrent-b"])
+      new Set([
+        "node-module-a",
+        "node-offline-sync-task",
+        "node-privacy-view-task",
+        "node-delete-conflict-task",
+        "node-doc-cleanup-task",
+        "node-concurrent-a",
+        "node-concurrent-b"
+      ])
     );
     expect(new Set(rightChildren)).toEqual(new Set(leftChildren));
   });
@@ -93,6 +101,7 @@ describe("privacy-aware conflict resolution", () => {
     expect(snapshot.nodes["node-root"].children).toEqual([
       "node-public",
       "node-dev-requirements",
+      "node-frontend-module",
       "node-finance"
     ]);
     expect(snapshot.tombstones["node-dev-plan"]).toBeDefined();

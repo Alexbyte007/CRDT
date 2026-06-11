@@ -376,6 +376,34 @@ export function renderHomePage(): string {
     .markdown-empty {
       margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6;
     }
+    .task-attrs-panel,
+    .module-filter-panel {
+      display: grid; gap: 10px; padding: 12px 14px;
+      border: 1px solid var(--line); border-radius: 16px; background: var(--surface-solid);
+      box-shadow: 0 10px 24px rgba(35,45,90,.05);
+    }
+    .task-attrs-grid,
+    .module-filter-grid,
+    .module-stat-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px;
+    }
+    .task-attrs-panel label,
+    .module-filter-panel label {
+      display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 800;
+    }
+    .task-attrs-panel input,
+    .task-attrs-panel select,
+    .module-filter-panel input,
+    .module-filter-panel select {
+      width: 100%; min-height: 34px; border: 1px solid var(--line); border-radius: 11px;
+      padding: 7px 9px; background: var(--surface-solid); color: var(--text); font-size: 13px;
+    }
+    .module-stat {
+      display: grid; gap: 2px; padding: 8px 10px; border-radius: 12px;
+      background: var(--surface-2); border: 1px solid var(--line);
+    }
+    .module-stat span { color: var(--muted); font-size: 11px; font-weight: 800; }
+    .module-stat strong { font-size: 14px; }
     .markdown-drawer-backdrop {
       position: fixed; inset: 0; z-index: 60; display: flex; justify-content: flex-end;
       padding: 18px; background: rgba(15, 23, 42, .28);
@@ -787,11 +815,13 @@ export function renderHomePage(): string {
         socket: null,
         editing: {
           timers: {},
-          drafts: {}
+          drafts: {},
+          filterTimer: null
         },
         treeUi: {
           expandedDetailNodeIds: {},
-          expandedTreeNodeIds: {}
+          expandedTreeNodeIds: {},
+          taskFilters: {}
         },
         markdownEditor: {
           activeNodeId: null,
@@ -1331,7 +1361,7 @@ export function renderHomePage(): string {
           return;
         }
         for (const root of state.view.roots) {
-          els.tree.appendChild(renderNode(root, 0));
+          els.tree.appendChild(renderNode(root, 0, null));
         }
         renderMarkdownEditorDrawer();
         restoreEditorFocus(focus);
@@ -1526,6 +1556,105 @@ export function renderHomePage(): string {
         );
       }
 
+      function taskStatusLabel(value) {
+        if (value === "todo") return "待办";
+        if (value === "doing") return "进行中";
+        if (value === "done") return "已完成";
+        return "-";
+      }
+
+      function taskPriorityLabel(value) {
+        return value ? value + " 级" : "-";
+      }
+
+      function isTaskNode(node) {
+        return node && node.type === "task";
+      }
+
+      function canSeeBudget(node) {
+        return Boolean(node && node.attrs && Object.prototype.hasOwnProperty.call(node.attrs, "budget"));
+      }
+
+      function hasTaskAttr(node, key) {
+        return Boolean(node && node.attrs && Object.prototype.hasOwnProperty.call(node.attrs, key));
+      }
+
+      function directTaskChildren(node) {
+        return (node.children || []).filter((child) => isTaskNode(child));
+      }
+
+      function isModuleNode(node, depth) {
+        return depth === 1 && directTaskChildren(node).length > 0;
+      }
+
+      function defaultTaskFilter() {
+        return {
+          priority: "",
+          status: "",
+          minBudget: "",
+          maxBudget: "",
+          keyword: ""
+        };
+      }
+
+      function taskFilterFor(nodeId) {
+        if (!state.treeUi.taskFilters[nodeId]) {
+          state.treeUi.taskFilters[nodeId] = defaultTaskFilter();
+        }
+        return state.treeUi.taskFilters[nodeId];
+      }
+
+      function taskMatchesFilter(task, filter) {
+        const attrs = task.attrs || {};
+        if (filter.priority && attrs.priority !== filter.priority) return false;
+        if (filter.status && attrs.taskStatus !== filter.status) return false;
+        if (filter.keyword) {
+          const text = String((task.title || "") + " " + (task.content || "")).toLowerCase();
+          if (!text.includes(filter.keyword.trim().toLowerCase())) return false;
+        }
+        if (hasTaskAttr(task, "budget")) {
+          const budget = Number(attrs.budget);
+          if (filter.minBudget !== "" && budget < Number(filter.minBudget)) return false;
+          if (filter.maxBudget !== "" && budget > Number(filter.maxBudget)) return false;
+        }
+        return true;
+      }
+
+      function isTaskFilterActive(filter) {
+        return Boolean(filter.priority || filter.status || filter.minBudget || filter.maxBudget || filter.keyword);
+      }
+
+      function filteredModuleChildren(moduleNode) {
+        const filter = taskFilterFor(moduleNode.id);
+        if (!isTaskFilterActive(filter)) {
+          return moduleNode.children || [];
+        }
+        return (moduleNode.children || []).filter((child) => !isTaskNode(child) || taskMatchesFilter(child, filter));
+      }
+
+      function taskStats(tasks) {
+        const stats = {
+          count: tasks.length,
+          a: 0,
+          b: 0,
+          c: 0,
+          budgetCount: 0,
+          budgetTotal: 0
+        };
+        for (const task of tasks) {
+          const attrs = task.attrs || {};
+          if (attrs.priority === "A") stats.a += 1;
+          if (attrs.priority === "B") stats.b += 1;
+          if (attrs.priority === "C") stats.c += 1;
+          if (hasTaskAttr(task, "budget")) {
+            stats.budgetCount += 1;
+            stats.budgetTotal += Number(attrs.budget || 0);
+          }
+        }
+        stats.budgetAverage = stats.budgetCount > 0 ? stats.budgetTotal / stats.budgetCount : 0;
+        return stats;
+      }
+
       function nodeTypeAbbreviation(type) {
         if (type === "folder") return "DIR";
         if (type === "task") return "TSK";
@@ -1609,6 +1738,222 @@ export function renderHomePage(): string {
         body.innerHTML = markdownToHtml(draft.content);
         preview.appendChild(body);
         container.appendChild(preview);
+      }
+
+      function appendTaskAttrsPanel(container, node) {
+        if (!isTaskNode(node)) return;
+        const attrs = node.attrs || {};
+        const panel = document.createElement("div");
+        panel.className = "task-attrs-panel";
+
+        const head = document.createElement("div");
+        head.className = "node-markdown-preview-head";
+        const title = document.createElement("span");
+        title.textContent = "任务属性";
+        head.appendChild(title);
+        panel.appendChild(head);
+
+        const grid = document.createElement("div");
+        grid.className = "task-attrs-grid";
+        grid.appendChild(renderTaskAttrControl(node, "priority", "优先级", [
+          { value: "", label: "未设置" },
+          { value: "A", label: "A 级" },
+          { value: "B", label: "B 级" },
+          { value: "C", label: "C 级" }
+        ], attrs.priority || ""));
+        if (canSeeBudget(node)) {
+          grid.appendChild(renderTaskBudgetControl(node));
+        }
+        grid.appendChild(renderTaskAttrControl(node, "taskStatus", "任务状态", [
+          { value: "", label: "未设置" },
+          { value: "todo", label: "待办" },
+          { value: "doing", label: "进行中" },
+          { value: "done", label: "已完成" }
+        ], attrs.taskStatus || ""));
+        panel.appendChild(grid);
+        container.appendChild(panel);
+      }
+
+      function renderTaskAttrControl(node, attrName, labelText, options, value) {
+        const label = document.createElement("label");
+        label.textContent = labelText;
+        if (!node.permissions.canEditAttrs) {
+          const readonly = document.createElement("strong");
+          readonly.textContent = attrName === "priority" ? taskPriorityLabel(value) : taskStatusLabel(value);
+          label.appendChild(readonly);
+          return label;
+        }
+        const select = document.createElement("select");
+        select.dataset.nodeId = node.id;
+        select.dataset.field = "attrs." + attrName;
+        for (const option of options) {
+          const item = document.createElement("option");
+          item.value = option.value;
+          item.textContent = option.label;
+          item.selected = option.value === value;
+          select.appendChild(item);
+        }
+        select.addEventListener("change", () =>
+          updateTaskAttr(node.id, attrName, select.value || undefined).catch((error) => setStatus(error.message))
+        );
+        label.appendChild(select);
+        return label;
+      }
+
+      function renderTaskBudgetControl(node) {
+        const label = document.createElement("label");
+        label.textContent = "经费预算";
+        const value = node.attrs && node.attrs.budget !== undefined ? String(node.attrs.budget) : "";
+        if (!node.permissions.canEditAttrs) {
+          const readonly = document.createElement("strong");
+          readonly.textContent = value || "-";
+          label.appendChild(readonly);
+          return label;
+        }
+        const input = document.createElement("input");
+        input.type = "number";
+        input.min = "0";
+        input.step = "100";
+        input.value = value;
+        input.dataset.nodeId = node.id;
+        input.dataset.field = "attrs.budget";
+        input.addEventListener("change", () =>
+          updateTaskAttr(node.id, "budget", input.value === "" ? undefined : Number(input.value)).catch((error) =>
+            setStatus(error.message)
+          )
+        );
+        label.appendChild(input);
+        return label;
+      }
+
+      function appendModuleFilterPanel(container, node, depth) {
+        if (!isModuleNode(node, depth)) return;
+        const allTasks = directTaskChildren(node);
+        const filter = taskFilterFor(node.id);
+        const filteredTasks = allTasks.filter((task) => taskMatchesFilter(task, filter));
+        const allStats = taskStats(allTasks);
+        const filteredStats = taskStats(filteredTasks);
+        const budgetVisible = allTasks.some((task) => canSeeBudget(task));
+
+        const panel = document.createElement("div");
+        panel.className = "module-filter-panel";
+        const head = document.createElement("div");
+        head.className = "node-markdown-preview-head";
+        const title = document.createElement("span");
+        title.textContent = "当前模块任务筛选";
+        const clear = document.createElement("button");
+        clear.type = "button";
+        clear.className = "btn small secondary";
+        clear.textContent = "清空筛选";
+        clear.disabled = !isTaskFilterActive(filter);
+        clear.addEventListener("click", () => {
+          state.treeUi.taskFilters[node.id] = defaultTaskFilter();
+          render();
+        });
+        head.appendChild(title);
+        head.appendChild(clear);
+        panel.appendChild(head);
+
+        const controls = document.createElement("div");
+        controls.className = "module-filter-grid";
+        controls.appendChild(renderModuleFilterSelect(node.id, "priority", "优先级", [
+          { value: "", label: "全部" },
+          { value: "A", label: "A 级" },
+          { value: "B", label: "B 级" },
+          { value: "C", label: "C 级" }
+        ], filter.priority));
+        controls.appendChild(renderModuleFilterSelect(node.id, "status", "状态", [
+          { value: "", label: "全部" },
+          { value: "todo", label: "待办" },
+          { value: "doing", label: "进行中" },
+          { value: "done", label: "已完成" }
+        ], filter.status));
+        if (budgetVisible) {
+          controls.appendChild(renderModuleFilterInput(node.id, "minBudget", "预算最小值", filter.minBudget, "number"));
+          controls.appendChild(renderModuleFilterInput(node.id, "maxBudget", "预算最大值", filter.maxBudget, "number"));
+        }
+        controls.appendChild(renderModuleFilterInput(node.id, "keyword", "关键词", filter.keyword, "text"));
+        panel.appendChild(controls);
+
+        const stats = document.createElement("div");
+        stats.className = "module-stat-grid";
+        stats.appendChild(renderModuleStat("当前可见任务数", allStats.count));
+        stats.appendChild(renderModuleStat("筛选后任务数", filteredStats.count));
+        stats.appendChild(renderModuleStat("A 级任务", filteredStats.a));
+        stats.appendChild(renderModuleStat("B 级任务", filteredStats.b));
+        stats.appendChild(renderModuleStat("C 级任务", filteredStats.c));
+        if (budgetVisible) {
+          stats.appendChild(renderModuleStat("预算总额", filteredStats.budgetTotal));
+          stats.appendChild(renderModuleStat("平均预算", filteredStats.budgetCount ? filteredStats.budgetAverage.toFixed(2) : "-"));
+        }
+        panel.appendChild(stats);
+        container.appendChild(panel);
+      }
+
+      function renderModuleFilterSelect(nodeId, key, labelText, options, value) {
+        const label = document.createElement("label");
+        label.textContent = labelText;
+        const select = document.createElement("select");
+        select.dataset.moduleFilter = key;
+        for (const option of options) {
+          const item = document.createElement("option");
+          item.value = option.value;
+          item.textContent = option.label;
+          item.selected = option.value === value;
+          select.appendChild(item);
+        }
+        select.addEventListener("change", () => {
+          taskFilterFor(nodeId)[key] = select.value;
+          render();
+        });
+        label.appendChild(select);
+        return label;
+      }
+
+      function renderModuleFilterInput(nodeId, key, labelText, value, type) {
+        const label = document.createElement("label");
+        label.textContent = labelText;
+        const input = document.createElement("input");
+        input.type = type;
+        input.value = value || "";
+        if (type === "number") {
+          input.min = "0";
+          input.step = "100";
+        }
+        input.dataset.nodeId = nodeId;
+        input.dataset.field = "moduleFilter." + key;
+        input.dataset.moduleFilter = key;
+        input.addEventListener("input", () => {
+          taskFilterFor(nodeId)[key] = input.value;
+          scheduleFilterRender();
+        });
+        label.appendChild(input);
+        return label;
+      }
+
+      function scheduleFilterRender() {
+        if (state.editing.filterTimer) {
+          window.clearTimeout(state.editing.filterTimer);
+        }
+        const scrollX = window.scrollX;
+        const scrollY = window.scrollY;
+        state.editing.filterTimer = window.setTimeout(() => {
+          state.editing.filterTimer = null;
+          render();
+          window.scrollTo(scrollX, scrollY);
+        }, 250);
+      }
+
+      function renderModuleStat(labelText, value) {
+        const item = document.createElement("div");
+        item.className = "module-stat";
+        const label = document.createElement("span");
+        label.textContent = labelText;
+        const strong = document.createElement("strong");
+        strong.textContent = String(value);
+        item.appendChild(label);
+        item.appendChild(strong);
+        return item;
       }
 
       function renderMarkdownEditorDrawer() {
@@ -1894,7 +2239,8 @@ export function renderHomePage(): string {
         const shell = document.createElement("div");
         shell.className = "node-shell";
 
-        const childCount = node.children ? node.children.length : 0;
+        const renderedChildren = isModuleNode(node, depth) ? filteredModuleChildren(node) : (node.children || []);
+        const childCount = renderedChildren.length;
         const childrenExpanded = isTreeExpanded(node, depth);
         const detailsExpanded = isDetailExpanded(node, depth);
 
@@ -2039,6 +2385,8 @@ export function renderHomePage(): string {
           detailInner.appendChild(policyPanel);
         }
 
+        appendModuleFilterPanel(detailInner, node, depth);
+        appendTaskAttrsPanel(detailInner, node);
         appendMarkdownPreview(detailInner, node, draft);
 
         if (node.permissions.canAddChild || node.permissions.canDelete) {
@@ -2050,7 +2398,7 @@ export function renderHomePage(): string {
             addButton.className = "btn small secondary";
             addButton.textContent = "添加子节点";
             addButton.addEventListener("click", () =>
-              addChildNode(node.id).catch((error) => {
+              addChildNode(node, depth).catch((error) => {
                 logOperationFailure({ type: "addNode", parentId: node.id, title: "子节点" }, error);
                 setStatus(error.message);
               })
@@ -2077,13 +2425,13 @@ export function renderHomePage(): string {
         box.appendChild(detailShell);
         shell.appendChild(box);
 
-        if (node.children && node.children.length > 0) {
+        if (renderedChildren.length > 0) {
           const childrenShell = document.createElement("div");
           childrenShell.className = "tree-children-shell" + (childrenExpanded ? " expanded" : "");
           const childrenInner = document.createElement("div");
           childrenInner.className = "tree-children-inner";
           const ul = document.createElement("ul");
-          for (const child of node.children) ul.appendChild(renderNode(child, depth + 1));
+          for (const child of renderedChildren) ul.appendChild(renderNode(child, depth + 1));
           childrenInner.appendChild(ul);
           childrenShell.appendChild(childrenInner);
           shell.appendChild(childrenShell);
@@ -2299,7 +2647,7 @@ export function renderHomePage(): string {
           '[data-node-id="' + cssEscape(focus.nodeId) + '"][data-field="' + cssEscape(focus.field) + '"]';
         const next = els.tree.querySelector(selector) || document.querySelector(selector);
         if (!next) return;
-        next.focus();
+        next.focus({ preventScroll: true });
         if (typeof next.setSelectionRange === "function") {
           const length = next.value.length;
           const start = Math.min(focus.selectionStart ?? length, length);
@@ -2533,13 +2881,30 @@ export function renderHomePage(): string {
         }
       }
 
-      async function addChildNode(parentId) {
+      async function addChildNode(parentNode, depth) {
+        const createTask = depth >= 1;
         await submitOperation({
           type: "addNode",
-          parentId,
-          title: "新节点",
-          content: ""
+          parentId: parentNode.id,
+          nodeType: createTask ? "task" : "doc",
+          title: createTask ? "新任务" : "新项目模块",
+          content: "",
+          attrs: createTask ? {
+            priority: "C",
+            budget: 0,
+            taskStatus: "todo"
+          } : undefined
         });
+      }
+
+      async function updateTaskAttr(nodeId, attrName, value) {
+        await submitOperation({
+          type: "updateAttrs",
+          nodeId,
+          attrsPatch: {
+            [attrName]: value
+          }
+        }, "更新任务属性");
       }
 
       async function updateUserRole(userId, role) {

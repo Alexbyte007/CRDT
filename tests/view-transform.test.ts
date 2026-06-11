@@ -18,25 +18,65 @@ describe("privacy view transform", () => {
     expect(flattenIds(adminView.roots)).toEqual([
       "node-root",
       "node-public",
+      "node-public-announcement-task",
+      "node-public-training-task",
       "node-dev-plan",
       "node-module-a",
+      "node-offline-sync-task",
+      "node-privacy-view-task",
+      "node-delete-conflict-task",
+      "node-doc-cleanup-task",
       "node-dev-requirements",
-      "node-finance"
+      "node-requirement-review-task",
+      "node-api-spec-task",
+      "node-frontend-module",
+      "node-tree-editing-task",
+      "node-operation-log-task",
+      "node-finance",
+      "node-finance-budget-review-task",
+      "node-finance-cost-control-task"
     ]);
     expect(flattenIds(managerView.roots)).toEqual([
       "node-root",
       "node-public",
+      "node-public-announcement-task",
+      "node-public-training-task",
       "node-dev-plan",
       "node-module-a",
-      "node-dev-requirements"
+      "node-offline-sync-task",
+      "node-privacy-view-task",
+      "node-delete-conflict-task",
+      "node-doc-cleanup-task",
+      "node-dev-requirements",
+      "node-requirement-review-task",
+      "node-api-spec-task",
+      "node-frontend-module",
+      "node-tree-editing-task",
+      "node-operation-log-task"
     ]);
     expect(flattenIds(memberView.roots)).toEqual([
       "node-root",
       "node-public",
+      "node-public-announcement-task",
+      "node-public-training-task",
       "node-dev-plan",
-      "node-dev-requirements"
+      "node-offline-sync-task",
+      "node-privacy-view-task",
+      "node-delete-conflict-task",
+      "node-doc-cleanup-task",
+      "node-dev-requirements",
+      "node-requirement-review-task",
+      "node-api-spec-task",
+      "node-frontend-module",
+      "node-tree-editing-task",
+      "node-operation-log-task"
     ]);
-    expect(flattenIds(guestView.roots)).toEqual(["node-root", "node-public"]);
+    expect(flattenIds(guestView.roots)).toEqual([
+      "node-root",
+      "node-public",
+      "node-public-announcement-task",
+      "node-public-training-task"
+    ]);
   });
 
   it("does not expose acl metadata in ordinary user views", () => {
@@ -137,7 +177,14 @@ describe("privacy view transform", () => {
     const addedNode = getNodeSnapshot(crdt, "node-api");
     const parent = getNodeSnapshot(crdt, "node-dev-plan");
     expect(addedNode?.title).toBe("接口设计");
-    expect(parent?.children).toEqual(["node-module-a", "node-api"]);
+    expect(parent?.children).toEqual([
+      "node-module-a",
+      "node-api",
+      "node-offline-sync-task",
+      "node-privacy-view-task",
+      "node-delete-conflict-task",
+      "node-doc-cleanup-task"
+    ]);
   });
 
   it("inherits parent visibility while granting creator-and-higher operation permissions", () => {
@@ -255,6 +302,85 @@ describe("privacy view transform", () => {
       },
       actorId: "u-dev-manager",
       timestamp: 30
+    });
+  });
+
+  it("filters task budget by role and enforces task attribute update permissions", () => {
+    const crdt = createSampleDocument();
+    const admin = user("u-admin");
+    const manager = user("u-dev-manager");
+    const member = user("u-dev-member");
+
+    const adminTask = findViewNode(getView(crdt, admin, { now: 31 }).roots, "node-privacy-view-task");
+    const managerTask = findViewNode(getView(crdt, manager, { now: 31 }).roots, "node-privacy-view-task");
+    const memberTask = findViewNode(getView(crdt, member, { now: 31 }).roots, "node-privacy-view-task");
+
+    expect(adminTask?.attrs).toMatchObject({
+      priority: "B",
+      budget: 4000,
+      taskStatus: "todo"
+    });
+    expect(managerTask?.attrs).toMatchObject({
+      priority: "B",
+      budget: 4000,
+      taskStatus: "todo"
+    });
+    expect(memberTask?.attrs).toMatchObject({
+      priority: "B",
+      taskStatus: "todo"
+    });
+    expect(memberTask?.attrs).not.toHaveProperty("budget");
+
+    const memberStatusUpdate = putOperation(
+      crdt,
+      member,
+      {
+        type: "updateAttrs",
+        nodeId: "node-privacy-view-task",
+        attrsPatch: {
+          taskStatus: "doing"
+        }
+      },
+      { now: 32 }
+    );
+    expect(memberStatusUpdate).toMatchObject({
+      type: "updateAttrs",
+      nodeId: "node-privacy-view-task",
+      attrsPatch: {
+        taskStatus: "doing"
+      }
+    });
+
+    expect(() =>
+      validateViewOperation(crdt, member, {
+        type: "updateAttrs",
+        nodeId: "node-privacy-view-task",
+        attrsPatch: {
+          budget: 9999
+        }
+      })
+    ).toThrow(AccessControlError);
+
+    const managerBudgetUpdate = putOperation(
+      crdt,
+      manager,
+      {
+        type: "updateAttrs",
+        nodeId: "node-privacy-view-task",
+        attrsPatch: {
+          priority: "A",
+          budget: 4500,
+          taskStatus: "doing"
+        }
+      },
+      { now: 33 }
+    );
+    expect(managerBudgetUpdate).toMatchObject({
+      attrsPatch: {
+        priority: "A",
+        budget: 4500,
+        taskStatus: "doing"
+      }
     });
   });
 

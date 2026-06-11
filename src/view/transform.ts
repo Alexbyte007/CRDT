@@ -76,6 +76,7 @@ export function validateViewOperation(
       return;
     case "updateAttrs": {
       ensureCanEdit(user, target, "updateAttrs", policyEngine);
+      validateAttrsPatchShape(operation.attrsPatch);
       const sanitized = policyEngine.sanitizeAttrsPatch(user, target, operation.attrsPatch);
       if (Object.keys(operation.attrsPatch).length > 0 && Object.keys(sanitized).length === 0) {
         throw new AccessControlError("No attrs in this patch are editable by the current user.");
@@ -137,6 +138,7 @@ export function putOperation(
       };
     case "updateAttrs": {
       const node = requireSnapshot(crdt, operation.nodeId);
+      validateAttrsPatchShape(operation.attrsPatch);
       const attrsPatch = policyEngine.sanitizeAttrsPatch(user, node, operation.attrsPatch);
       return {
         type: "updateAttrs",
@@ -401,14 +403,15 @@ function buildFullAddNodeOperation(
   const creatorAndHigherRoles = rolesAtOrAbove(user.role);
   const node: NewTreeNode = {
     id: operation.nodeId ?? createNodeId(user.id, timestamp),
-    type: defaults.type,
+    type: operation.nodeType ?? defaults.type,
     title: operation.title,
     content: operation.content ?? "",
     attrs: {
       department: resolveDepartmentDefault(defaults.department, parent),
       ownerId: resolveOwnerDefault(defaults.ownerId, user),
       tags: [],
-      status: defaults.status
+      status: defaults.status,
+      ...sanitizeNewNodeAttrs(operation.attrs)
     },
     acl: {
       visibility: resolveVisibilityDefault(defaults.visibility, parent),
@@ -443,6 +446,32 @@ function buildFullAddNodeOperation(
     actorId: user.id,
     timestamp
   };
+}
+
+function validateAttrsPatchShape(attrsPatch: Partial<NodeAttrs>): void {
+  if (attrsPatch.priority !== undefined && !["A", "B", "C"].includes(attrsPatch.priority)) {
+    throw new AccessControlError(`Unsupported task priority: ${attrsPatch.priority}`);
+  }
+  if (attrsPatch.taskStatus !== undefined && !["todo", "doing", "done"].includes(attrsPatch.taskStatus)) {
+    throw new AccessControlError(`Unsupported task status: ${attrsPatch.taskStatus}`);
+  }
+  if (attrsPatch.budget !== undefined && (!Number.isFinite(attrsPatch.budget) || attrsPatch.budget < 0)) {
+    throw new AccessControlError("Task budget must be a non-negative number.");
+  }
+}
+
+function sanitizeNewNodeAttrs(attrs: Partial<NodeAttrs> | undefined): Partial<NodeAttrs> {
+  if (!attrs) {
+    return {};
+  }
+  validateAttrsPatchShape(attrs);
+  const result: Partial<NodeAttrs> = {};
+  for (const key of ["priority", "budget", "taskStatus"] as const) {
+    if (attrs[key] !== undefined) {
+      Object.assign(result, { [key]: attrs[key] });
+    }
+  }
+  return result;
 }
 
 function resolveDepartmentDefault(value: "inherit-parent", parent: TreeNodeSnapshot): string {

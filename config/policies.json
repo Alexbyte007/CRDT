@@ -81,6 +81,16 @@
         "name": "tags and status visible to manager and member",
         "match": "field in ['attrs.tags', 'attrs.status'] and user.role in ['manager', 'member']",
         "visible": true
+      },
+      {
+        "name": "task priority and status visible to users who can view the task",
+        "match": "field in ['attrs.priority', 'attrs.taskStatus'] and user.role in ['manager', 'member', 'guest']",
+        "visible": true
+      },
+      {
+        "name": "task budget visible to managers only",
+        "match": "field == 'attrs.budget' and user.role == 'manager'",
+        "visible": true
       }
     ]
   },
@@ -106,17 +116,17 @@
       {
         "name": "admin can edit all attrs",
         "match": "user.role == 'admin'",
-        "attrs": ["department", "ownerId", "tags", "status"]
+        "attrs": ["department", "ownerId", "tags", "status", "priority", "budget", "taskStatus"]
       },
       {
         "name": "manager can edit limited attrs",
         "match": "user.role == 'manager'",
-        "attrs": ["tags", "status"]
+        "attrs": ["tags", "status", "priority", "budget", "taskStatus"]
       },
       {
-        "name": "member can edit tags only",
+        "name": "member can edit tags and task status only",
         "match": "user.role == 'member'",
-        "attrs": ["tags"]
+        "attrs": ["tags", "taskStatus"]
       }
     ]
   },

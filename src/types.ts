@@ -35,6 +35,9 @@ export interface NodeAttrs {
   ownerId: UserId;
   tags?: string[];
   status?: "active" | "archived";
+  priority?: "A" | "B" | "C";
+  budget?: number;
+  taskStatus?: "todo" | "doing" | "done";
 }
 
 export interface NodeAcl {
@@ -188,8 +191,10 @@ export interface ViewAddNodeOperation {
   type: "addNode";
   parentId: NodeId;
   nodeId?: NodeId;
+  nodeType?: NodeType;
   title: string;
   content?: string;
+  attrs?: Partial<NodeAttrs>;
   index?: number;
 }
 

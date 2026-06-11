@@ -1,4 +1,4 @@
-import { createSampleDocument, sampleUserAccountSeeds } from "../fixtures/sample";
+import { createSampleDocument, ensureTaskAttributeSampleData, sampleUserAccountSeeds } from "../fixtures/sample";
 import { createCollaborationServer } from "./app";
 import { hashPassword } from "./auth";
 import { createSqliteDocumentStore } from "./persistence";
@@ -26,6 +26,9 @@ function createInitialAccounts(now: number) {
 }
 
 const crdt = documentStore.loadOrCreate(() => createSampleDocument());
+if (ensureTaskAttributeSampleData(crdt)) {
+  documentStore.save(crdt);
+}
 
 const persistedAccounts = documentStore.loadUserAccounts();
 

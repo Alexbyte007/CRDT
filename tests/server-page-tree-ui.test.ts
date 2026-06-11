@@ -20,4 +20,17 @@ describe("home page hybrid tree UI", () => {
     expect(html).toContain("node-detail-shell");
     expect(html).toContain("node-child-count");
   });
+
+  it("renders privacy-aware in-tree task filters without a separate table UI", () => {
+    const html = renderHomePage();
+
+    expect(html).toContain("taskFilters");
+    expect(html).toContain("appendModuleFilterPanel");
+    expect(html).toContain("当前模块任务筛选");
+    expect(html).toContain("预算总额");
+    expect(html).toContain("appendTaskAttrsPanel");
+    expect(html).toContain("scheduleFilterRender");
+    expect(html).toContain("preventScroll");
+    expect(html).not.toContain("appendStructuredTableView");
+  });
 });
