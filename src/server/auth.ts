@@ -21,10 +21,21 @@ export class AuthorizationError extends Error {
   }
 }
 
-export function createSession(context: CollaborationContext, userId: UserId): SessionInfo {
+export function createSession(context: CollaborationContext, userId: UserId): { session: SessionInfo; revokedUserIds: UserId[] } {
   const user = context.users.get(userId);
   if (!user) {
     throw new AuthenticationError("Invalid login user.");
+  }
+
+  // 同一账号只能单点登录：撤销该用户所有旧 session
+  const revokedUserIds: UserId[] = [];
+  for (const [token, session] of context.sessions) {
+    if (session.userId === userId) {
+      context.sessions.delete(token);
+      if (!revokedUserIds.includes(session.userId)) {
+        revokedUserIds.push(session.userId);
+      }
+    }
   }
 
   const session: SessionInfo = {
@@ -34,7 +45,7 @@ export function createSession(context: CollaborationContext, userId: UserId): Se
     policyVersion: context.policyVersion
   };
   context.sessions.set(session.token, session);
-  return session;
+  return { session, revokedUserIds };
 }
 
 export function revokeSession(context: CollaborationContext, token: string): void {

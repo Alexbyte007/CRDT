@@ -11,6 +11,7 @@ import type {
 import {
   broadcastViews,
   handleWebSocketConnection,
+  kickClients,
   type WebSocketClient
 } from "./websocket";
 
@@ -38,6 +39,8 @@ export function createCollaborationServer(
     void handleHttpRequest(request, response, context, () => {
       persistDocument();
       broadcastViews(context, clients);
+    }, (revokedUserIds) => {
+      kickClients(clients, revokedUserIds);
     });
   });
   const wsServer = new WebSocketServer({ noServer: true });

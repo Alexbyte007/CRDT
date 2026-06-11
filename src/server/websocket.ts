@@ -3,6 +3,7 @@ import type { WebSocket } from "ws";
 import { encodeStateVector } from "../crdt/state-vector";
 import { getView } from "../view/transform";
 import type {
+  ChangeInfo,
   ClientMessage,
   CollaborationContext,
   ServerMessage
@@ -63,9 +64,20 @@ export function handleWebSocketConnection(
   });
 }
 
+export function kickClients(clients: Set<WebSocketClient>, userIds: string[]): void {
+  const ids = new Set(userIds);
+  for (const client of clients) {
+    if (ids.has(client.userId)) {
+      client.socket.close(4001, "Session revoked");
+      clients.delete(client);
+    }
+  }
+}
+
 export function broadcastViews(
   context: CollaborationContext,
-  clients: Set<WebSocketClient>
+  clients: Set<WebSocketClient>,
+  change?: ChangeInfo
 ): void {
   for (const client of clients) {
     const user = context.users.get(client.userId);
@@ -80,7 +92,8 @@ export function broadcastViews(
         policyEngine: context.policyEngine
       }),
       stateVector: encodeStateVector(context.crdt),
-      policyVersion: context.policyVersion
+      policyVersion: context.policyVersion,
+      change
     });
   }
 }
@@ -105,11 +118,22 @@ function handleClientMessage(
           userId: user.id
         }
       : undefined;
+    const operation = "operation" in message ? message.operation : (envelope ? envelope.operation : undefined);
     const result = applyViewOperationRequest(context, {
       user,
-      operation: "operation" in message ? message.operation : undefined,
+      operation,
       envelope
     });
+
+    const change: ChangeInfo | undefined = operation ? {
+      userId: user.id,
+      userName: user.name,
+      operationType: operation.type,
+      nodeTitle: "title" in operation ? (operation as { title?: string }).title : undefined,
+      nodeId: "nodeId" in operation ? (operation as { nodeId?: string }).nodeId
+        : "parentId" in operation ? (operation as { parentId?: string }).parentId
+        : undefined
+    } : undefined;
 
     sendServerMessage(client.socket, {
       type: "operationApplied",
@@ -117,11 +141,12 @@ function handleClientMessage(
       operationId: result.operationId,
       deduplicated: result.deduplicated,
       stateVector: result.stateVector,
-      policyVersion: context.policyVersion
+      policyVersion: context.policyVersion,
+      change
     });
     if (!result.deduplicated) {
       onDocumentChanged();
-      broadcastViews(context, clients);
+      broadcastViews(context, clients, change);
     }
     return;
   }

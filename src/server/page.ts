@@ -203,14 +203,22 @@ export function renderHomePage(): string {
       box-shadow: 0 10px 20px rgba(35,45,90,.04);
     }
     .employee-log-item span {
+      grid-column: 1; grid-row: 1;
       color: var(--muted); font-family: var(--mono); font-size: 11px; line-height: 1.5;
     }
+    .employee-log-item small {
+      grid-column: 1; grid-row: 2;
+      color: var(--muted); font-size: 11px; line-height: 1.4; font-weight: 500;
+      overflow-wrap: anywhere;
+    }
     .employee-log-item strong {
+      grid-column: 2; grid-row: 1;
       min-width: 0; color: var(--text); font-size: 12px; line-height: 1.45; font-weight: 800;
       overflow-wrap: anywhere;
     }
     .employee-log-item em {
-      grid-column: 2; color: var(--muted); font-size: 11px; line-height: 1.45; font-style: normal;
+      grid-column: 2; grid-row: 2;
+      color: var(--muted); font-size: 11px; line-height: 1.45; font-style: normal;
       overflow-wrap: anywhere;
     }
     .employee-log-item.local { border-left-color: var(--brand); }
@@ -506,7 +514,7 @@ export function renderHomePage(): string {
     }
     .multi-select summary::-webkit-details-marker { display: none; }
     .multi-select-menu {
-      position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20; display: grid; gap: 2px;
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 9999; display: grid; gap: 2px;
       max-height: 220px; overflow: auto; padding: 6px; border: 1px solid var(--line); border-radius: 16px;
       background: var(--surface-solid); box-shadow: 0 12px 28px rgba(31, 41, 55, 0.14);
     }
@@ -651,6 +659,12 @@ export function renderHomePage(): string {
             <div><strong style="color:var(--text);">策略版本</strong> <span id="policyVersion" style="color:var(--muted);">-</span></div>
             <div><strong style="color:var(--text);">连接状态</strong> <span id="connectionState" style="color:var(--muted);">未连接</span></div>
             <div><strong style="color:var(--text);">离线队列</strong> <span id="queueLength" style="color:var(--muted);">0</span></div>
+            <div><strong style="color:var(--text);">待同步</strong> <span id="pendingQueueLength" style="color:var(--muted);">0</span></div>
+            <div><strong style="color:var(--text);">发送中</strong> <span id="sendingQueueLength" style="color:var(--muted);">0</span></div>
+            <div><strong style="color:var(--text);">已确认</strong> <span id="ackedQueueLength" style="color:var(--muted);">0</span></div>
+            <div><strong style="color:var(--text);">同步失败</strong> <span id="rejectedQueueLength" style="color:var(--muted);">0</span></div>
+            <div><strong style="color:var(--text);">最后心跳</strong> <span id="lastHeartbeat" style="color:var(--muted);">-</span></div>
+            <div><strong style="color:var(--text);">最后同步</strong> <span id="lastSync" style="color:var(--muted);">-</span></div>
           </div>
         </div>
 
@@ -664,14 +678,14 @@ export function renderHomePage(): string {
       </aside>
 
       <section class="content employee-content">
-        <div id="userManagement" class="section-card glass admin-panel hidden" aria-hidden="true" style="margin-bottom: 18px;">
+        <div id="userManagement" class="section-card glass admin-panel hidden" aria-hidden="true" style="margin-bottom: 18px; position: relative; z-index: 10;">
           <div class="section-head compact">
             <div>
               <h3>用户管理</h3>
               <p>管理系统中的用户角色与部门权限。</p>
             </div>
           </div>
-          <div class="user-table-wrap" style="overflow-x: auto; margin-top: 8px;">
+          <div class="user-table-wrap" style="margin-top: 8px;">
             <table class="user-table" style="width: 100%; font-size: 13px; border-collapse: collapse; text-align: left;">
               <thead>
                 <tr style="border-bottom: 1px solid var(--line);">
@@ -786,6 +800,10 @@ export function renderHomePage(): string {
         offline: {
           connected: false,
           simulated: false,
+          connectionStatus: "offline",
+          lastPongAt: 0,
+          lastSyncAt: 0,
+          syncInFlight: false,
           queue: loadStoredOfflineQueue()
         },
         localLog: [],
@@ -814,6 +832,12 @@ export function renderHomePage(): string {
         policyVersion: document.querySelector("#policyVersion"),
         connectionState: document.querySelector("#connectionState"),
         queueLength: document.querySelector("#queueLength"),
+        pendingQueueLength: document.querySelector("#pendingQueueLength"),
+        sendingQueueLength: document.querySelector("#sendingQueueLength"),
+        ackedQueueLength: document.querySelector("#ackedQueueLength"),
+        rejectedQueueLength: document.querySelector("#rejectedQueueLength"),
+        lastHeartbeat: document.querySelector("#lastHeartbeat"),
+        lastSync: document.querySelector("#lastSync"),
         syncOffline: document.querySelector("#syncOffline"),
         status: document.querySelector("#status"),
         tree: document.querySelector("#tree"),
@@ -838,6 +862,14 @@ export function renderHomePage(): string {
       };
 
       const offlineStorageKey = "crdt-editor-offline-queue-v1";
+      const ACK_RETENTION_MS = 30_000;
+      const SEND_TIMEOUT_MS = 15_000;
+      const HEARTBEAT_INTERVAL_MS = 5_000;
+      const HEARTBEAT_TIMEOUT_MS = 15_000;
+      const AUTO_SYNC_INTERVAL_MS = 5_000;
+      const RECONNECT_INTERVAL_MS = 5_000;
+      const MAX_REJECTED_ITEMS = 100;
+      const MAX_QUEUE_SIZE = 1000;
       const operationLogLimit = 20;
       const operationLogKeys = new Set();
       const operationLogClassNames = {
@@ -879,10 +911,26 @@ export function renderHomePage(): string {
         try {
           const raw = window.localStorage.getItem("crdt-editor-offline-queue-v1");
           const parsed = raw ? JSON.parse(raw) : [];
-          return Array.isArray(parsed) ? parsed : [];
+          return Array.isArray(parsed)
+            ? parsed.map(normalizeOfflineQueueItem).filter(Boolean)
+            : [];
         } catch {
           return [];
         }
+      }
+
+      function normalizeOfflineQueueItem(item) {
+        if (!item || typeof item !== "object" || !item.id || !item.operation) {
+          return null;
+        }
+        return {
+          ...item,
+          status: ["pending", "sending", "acked", "rejected"].includes(item.status)
+            ? item.status
+            : "pending",
+          attempts: Number.isFinite(item.attempts) ? item.attempts : 0,
+          createdAt: Number.isFinite(item.createdAt) ? item.createdAt : Date.now()
+        };
       }
 
       function saveOfflineQueue() {
@@ -903,6 +951,11 @@ export function renderHomePage(): string {
         const response = await fetch(url, requestOptions);
         const body = await response.json();
         if (!response.ok || body.ok === false) {
+          const errorName = body.error ? body.error.name : "";
+          if (errorName === "AuthenticationError") {
+            logout();
+            throw new Error(body.error ? body.error.message : "登录已失效，请重新登录。");
+          }
           throw new Error(body.error ? body.error.message : "请求失败");
         }
         return body;
@@ -954,6 +1007,10 @@ export function renderHomePage(): string {
           state.stateVector = "";
           state.offline.connected = false;
           state.offline.simulated = false;
+          state.offline.connectionStatus = "offline";
+          state.offline.lastPongAt = 0;
+          state.offline.lastSyncAt = 0;
+          state.offline.syncInFlight = false;
           clearAllAutoSaveTimers();
           state.editing.drafts = {};
           state.markdownEditor.activeNodeId = null;
@@ -1050,6 +1107,7 @@ export function renderHomePage(): string {
 
         const normalized = {
           kind,
+          operator: entry.operator || "",
           title: entry.title || "记录操作",
           detail: entry.detail || "",
           time: entry.time || new Date().toLocaleTimeString("zh-CN", { hour12: false }),
@@ -1077,6 +1135,7 @@ export function renderHomePage(): string {
             const className = operationLogClassNames[entry.kind] || operationLogClassNames.local;
             return '<div class="' + escapeHtml(className) + '">' +
               '<span>' + escapeHtml(entry.time) + '</span>' +
+              (entry.operator ? '<small>' + escapeHtml(entry.operator) + '</small>' : '') +
               '<strong>' + escapeHtml(entry.title) + '</strong>' +
               (entry.detail ? '<em>' + escapeHtml(entry.detail) + '</em>' : '') +
               '</div>';
@@ -1206,12 +1265,26 @@ export function renderHomePage(): string {
         return (queue || state.offline.queue).find((envelope) => envelope.id === operationId) || null;
       }
 
+      function operationLabel(operationType) {
+        const labels = {
+          addNode: "新增子节点",
+          deleteNode: "删除节点",
+          deleteNodeKeepChildren: "删除节点（保留子节点）",
+          renameNode: "重命名节点",
+          updateContent: "修改节点内容",
+          updateAcl: "修改节点权限",
+          updateAttrs: "修改节点属性"
+        };
+        return labels[operationType] || ("执行操作「" + operationType + "」");
+      }
+
       function formatRemoteOperationMessage(message, envelope) {
         if (message.type === "operationApplied") {
           const summary = envelope && envelope.operation ? formatViewOperation(envelope.operation) : null;
           return {
             kind: "remote",
-            title: "服务端已合并本地操作",
+            operator: state.user ? state.user.name : "",
+            title: "服务端已合并本操作",
             detail: message.deduplicated
               ? "重复操作已跳过"
               : summary
@@ -1221,12 +1294,21 @@ export function renderHomePage(): string {
           };
         }
 
-        return {
-          kind: "remote",
-          title: "收到远端视图更新",
-          detail: "协同视图已刷新",
-          key: "remote:view:" + (message.stateVector || Date.now())
-        };
+        // view 类型：显示操作者身份
+        if (message.change) {
+          const c = message.change;
+          const desc = operationLabel(c.operationType);
+          return {
+            kind: "remote",
+            operator: c.userName,
+            title: desc,
+            detail: c.nodeTitle ? "目标: 「" + c.nodeTitle + "」" : (c.nodeId ? "节点: " + c.nodeId : ""),
+            key: "remote:view:" + (c.userId || "") + ":" + (c.operationType || "") + ":" + (message.stateVector || Date.now())
+          };
+        }
+
+        // 无 change 信息的 view 消息（如初始连接或 HTTP API 触发），不记录日志
+        return null;
       }
 
       function render() {
@@ -1257,22 +1339,42 @@ export function renderHomePage(): string {
 
       function renderSyncState() {
         const currentQueue = queueForCurrentUser();
+        const stats = queueStatsForCurrentUser();
         els.sessionUser.textContent = state.user
           ? state.user.name + " / " + state.user.role + " / " + state.user.department
           : "未登录";
         els.policyVersion.textContent = state.policyVersion ? String(state.policyVersion) : "-";
-        els.connectionState.textContent = state.offline.simulated
-          ? "模拟离线"
-          : isSocketActive()
-            ? state.offline.connected
-              ? "已连接"
-              : "连接中"
-            : "离线";
+        els.connectionState.textContent = connectionStatusLabel();
         els.queueLength.textContent = String(currentQueue.length);
-        els.syncOffline.disabled = !state.token || currentQueue.length === 0;
+        els.pendingQueueLength.textContent = String(stats.pending);
+        els.sendingQueueLength.textContent = String(stats.sending);
+        els.ackedQueueLength.textContent = String(stats.acked);
+        els.rejectedQueueLength.textContent = String(stats.rejected);
+        els.lastHeartbeat.textContent = state.offline.lastPongAt
+          ? secondsAgo(state.offline.lastPongAt)
+          : "-";
+        els.lastSync.textContent = state.offline.lastSyncAt
+          ? secondsAgo(state.offline.lastSyncAt)
+          : "-";
+        els.syncOffline.disabled = !state.token || syncableQueueForCurrentUser().length === 0;
         els.refresh.disabled = !state.token;
         els.connect.disabled = !state.token;
         els.connect.textContent = state.offline.simulated ? "恢复联网" : "模拟断网";
+      }
+
+      function connectionStatusLabel() {
+        if (state.offline.simulated || state.offline.connectionStatus === "simulated-offline") {
+          return "模拟离线";
+        }
+        if (state.offline.connectionStatus === "stale") return "心跳超时";
+        if (state.offline.connectionStatus === "connected") return "已连接";
+        if (state.offline.connectionStatus === "connecting") return "连接中";
+        return "离线";
+      }
+
+      function secondsAgo(timestamp) {
+        const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+        return seconds + " 秒前";
       }
 
       function renderUserManagement() {
@@ -1309,13 +1411,16 @@ export function renderHomePage(): string {
 
       function renderRoleCell(user, adminCount) {
         const cell = document.createElement("td");
+        const isSelf = state.user && user.id === state.user.id;
+        const allOptions = [
+          { value: "guest", label: "访客" },
+          { value: "member", label: "研发人员" },
+          { value: "manager", label: "研发经理" },
+          { value: "admin", label: "管理员" }
+        ];
+        const roleOptions = isSelf ? allOptions : allOptions.filter((opt) => opt.value !== "admin");
         const roleSelect = createCustomSelect(
-          [
-            { value: "guest", label: "访客" },
-            { value: "member", label: "研发人员" },
-            { value: "manager", label: "研发经理" },
-            { value: "admin", label: "管理员" }
-          ],
+          roleOptions,
           user.role,
           async (newValue) => {
             const previousRole = user.role;
@@ -1992,11 +2097,11 @@ export function renderHomePage(): string {
         details.className = "multi-select";
         if (disabled) details.style.pointerEvents = "none";
         if (disabled) details.style.opacity = "0.6";
-        
+
         const summary = document.createElement("summary");
         const menu = document.createElement("div");
         menu.className = "multi-select-menu";
-        
+
         let currentValueState = currentValue;
 
         function renderMenu() {
@@ -2020,17 +2125,49 @@ export function renderHomePage(): string {
             menu.appendChild(btn);
           }
         }
-        
+
         renderMenu();
         details.appendChild(summary);
         details.appendChild(menu);
-        
+
+        // 下拉框互斥：同时只能打开一个
+        details.addEventListener("toggle", () => {
+          if (details.open) {
+            // 关闭用户管理区域其他下拉框
+            const userRows = document.querySelector("#userRows");
+            if (userRows) {
+              for (const other of userRows.querySelectorAll(".multi-select")) {
+                if (other !== details && other.open) {
+                  other.open = false;
+                }
+              }
+            }
+          }
+        });
+
+        // 点击页面其他地方关闭用户管理下拉框
+        if (!window.__customSelectGlobalClickBound) {
+          window.__customSelectGlobalClickBound = true;
+          document.addEventListener("click", (event) => {
+            const target = event.target;
+            if (!target || !target.closest) return;
+            if (target.closest(".multi-select")) return;
+            const userRows = document.querySelector("#userRows");
+            if (!userRows) return;
+            for (const detailsEl of userRows.querySelectorAll(".multi-select")) {
+              if (detailsEl.open) {
+                detailsEl.open = false;
+              }
+            }
+          });
+        }
+
         return {
           element: details,
           get value() { return currentValueState; },
           set value(v) { currentValueState = v; renderMenu(); },
-          set disabled(d) { 
-            disabled = d; 
+          set disabled(d) {
+            disabled = d;
             details.style.pointerEvents = d ? "none" : "auto";
             details.style.opacity = d ? "0.6" : "1";
           }
@@ -2216,12 +2353,22 @@ export function renderHomePage(): string {
           policyVersion: state.policyVersion,
           baseStateVector: state.stateVector,
           createdAt: Date.now(),
-          operation
+          operation,
+          status: "pending",
+          attempts: 0
         };
       }
 
       function isSocketOpen() {
         return state.socket && state.socket.readyState === WebSocket.OPEN;
+      }
+
+      function isConnectionUsable() {
+        return (
+          !state.offline.simulated &&
+          state.offline.connectionStatus === "connected" &&
+          isSocketOpen()
+        );
       }
 
       function isSocketActive() {
@@ -2235,10 +2382,100 @@ export function renderHomePage(): string {
         return state.offline.queue.filter((envelope) => envelope.userId === currentUserId());
       }
 
-      function removeQueuedOperations(ids) {
-        const completed = new Set(ids);
-        state.offline.queue = state.offline.queue.filter((envelope) => !completed.has(envelope.id));
+      function queueStatsForCurrentUser() {
+        const stats = {
+          pending: 0,
+          sending: 0,
+          acked: 0,
+          rejected: 0
+        };
+        for (const item of queueForCurrentUser()) {
+          if (item.status === "sending") stats.sending += 1;
+          else if (item.status === "acked") stats.acked += 1;
+          else if (item.status === "rejected") stats.rejected += 1;
+          else stats.pending += 1;
+        }
+        return stats;
+      }
+
+      function syncableQueueForCurrentUser() {
+        const now = Date.now();
+        return queueForCurrentUser()
+          .filter((item) =>
+            item.status === "pending" ||
+            (item.status === "sending" && (!item.lastAttemptAt || now - item.lastAttemptAt > SEND_TIMEOUT_MS))
+          )
+          .sort((left, right) => (left.createdAt || 0) - (right.createdAt || 0));
+      }
+
+      function markQueueItemsSending(items) {
+        const now = Date.now();
+        for (const item of items) {
+          item.status = "sending";
+          item.attempts = (item.attempts || 0) + 1;
+          item.lastAttemptAt = now;
+          delete item.error;
+        }
         saveOfflineQueue();
+      }
+
+      function markQueueItemsAcked(ids) {
+        const completed = new Set(ids);
+        const now = Date.now();
+        for (const item of state.offline.queue) {
+          if (completed.has(item.id)) {
+            item.status = "acked";
+            item.ackedAt = now;
+            delete item.error;
+          }
+        }
+        compactOfflineQueue();
+        saveOfflineQueue();
+      }
+
+      function markQueueItemsRejected(rejections) {
+        const now = Date.now();
+        for (const rejected of rejections || []) {
+          const item = state.offline.queue.find((entry) => entry.id === rejected.id);
+          if (!item) continue;
+          item.status = "rejected";
+          item.rejectedAt = now;
+          item.error = rejected.error || {
+            name: "Error",
+            message: "服务器拒绝该操作"
+          };
+        }
+        compactOfflineQueue();
+        saveOfflineQueue();
+      }
+
+      function removeQueuedOperations(ids) {
+        markQueueItemsAcked(ids);
+      }
+
+      function compactOfflineQueue() {
+        const now = Date.now();
+        state.offline.queue = state.offline.queue.filter((item) => {
+          if (item.status !== "acked") return true;
+          return !item.ackedAt || now - item.ackedAt <= ACK_RETENTION_MS;
+        });
+
+        const rejected = state.offline.queue
+          .filter((item) => item.status === "rejected")
+          .sort((left, right) => (right.rejectedAt || 0) - (left.rejectedAt || 0));
+        const keepRejected = new Set(rejected.slice(0, MAX_REJECTED_ITEMS).map((item) => item.id));
+        state.offline.queue = state.offline.queue.filter(
+          (item) => item.status !== "rejected" || keepRejected.has(item.id)
+        );
+      }
+
+      function canEnqueueOperation() {
+        const activeCount = queueForCurrentUser().filter((item) => item.status !== "acked").length;
+        if (activeCount >= MAX_QUEUE_SIZE) {
+          setStatus("离线队列过长，请先恢复联网同步");
+          return false;
+        }
+        return true;
       }
 
       function clearAutoSaveTimer(nodeId) {
@@ -2569,6 +2806,12 @@ export function renderHomePage(): string {
 
       async function submitOperation(operation, customLogTitle) {
         if (!state.token) return setStatus("请先登录");
+        compactOfflineQueue();
+        if (!canEnqueueOperation()) {
+          saveOfflineQueue();
+          renderSyncState();
+          return;
+        }
         const envelope = createEnvelope(operation);
         state.offline.queue.push(envelope);
         saveOfflineQueue();
@@ -2576,13 +2819,14 @@ export function renderHomePage(): string {
         const summary = formatViewOperation(operation, customLogTitle);
         appendOperationLog({
           kind: "local",
+          operator: state.user ? state.user.name : "",
           title: summary.title,
           detail: summary.detail,
           coalesceKey: "local:" + operation.type + ":" + targetNodeIdFromOperation(operation)
         });
         renderOperationLogs();
-        if (isSocketOpen() && !state.offline.simulated) {
-          state.socket.send(JSON.stringify({ type: "operation", envelope }));
+        if (isConnectionUsable()) {
+          sendQueuedOperation(envelope);
           setStatus("操作已发送，等待确认");
         } else if (state.offline.simulated) {
           setStatus("模拟离线中，操作已进入队列");
@@ -2591,56 +2835,105 @@ export function renderHomePage(): string {
         }
       }
 
-      async function syncOfflineQueue() {
+      function sendQueuedOperation(envelope) {
+        if (!isConnectionUsable()) return false;
+        try {
+          markQueueItemsSending([envelope]);
+          state.socket.send(JSON.stringify({ type: "operation", envelope }));
+          appendOperationLog({
+            kind: "local",
+            title: "操作已发送",
+            detail: formatViewOperation(envelope.operation).title,
+            coalesceKey: "sending:" + envelope.id
+          });
+          renderOperationLogs();
+          return true;
+        } catch (error) {
+          envelope.status = "pending";
+          envelope.error = {
+            name: "SendError",
+            message: error && error.message ? error.message : String(error)
+          };
+          saveOfflineQueue();
+          return false;
+        }
+      }
+
+      async function syncOfflineQueue(options) {
         if (!state.token) return setStatus("请先登录");
-        const operations = queueForCurrentUser();
+        if (state.offline.syncInFlight) return;
+        const operations = syncableQueueForCurrentUser();
         if (operations.length === 0) {
+          compactOfflineQueue();
+          saveOfflineQueue();
           renderSyncState();
           return;
         }
 
-        const body = await requestJson("/api/operations/batch", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ operations })
-        });
-        removeQueuedOperations(
-          []
-            .concat(body.applied || [], body.skipped || [])
-            .concat((body.rejected || []).map((item) => item.id).filter(Boolean))
-        );
-        state.view = body.view;
-        state.stateVector = body.stateVector || state.stateVector;
-        await refreshSession();
-        render();
+        state.offline.syncInFlight = true;
+        markQueueItemsSending(operations);
+        renderSyncState();
+        try {
+          const body = await requestJson("/api/operations/batch", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ operations })
+          });
+          markQueueItemsAcked([].concat(body.applied || [], body.skipped || []));
+          markQueueItemsRejected(body.rejected || []);
+          state.offline.lastSyncAt = Date.now();
+          state.view = body.view;
+          state.stateVector = body.stateVector || state.stateVector;
+          await refreshSession();
+          render();
 
-        if (body.rejected && body.rejected.length > 0) {
-          setStatus("同步完成，" + body.rejected.length + " 个操作被拒绝");
-          appendOperationLog({
-            kind: "remote",
-            title: "离线队列同步部分完成",
-            detail: operations.length + " 个操作中 " + body.rejected.length + " 个被拒绝",
-            key: "remote:batch-partial:" + operations.map((envelope) => envelope.id).join("|")
-          });
-          for (const rejected of body.rejected) {
-            const envelope = findQueuedEnvelope(rejected.id, operations);
-            const failure = formatOperationFailure(
-              envelope ? envelope.operation : null,
-              rejected.error && rejected.error.message ? rejected.error : "服务器拒绝该操作"
-            );
-            failure.key = "failed:batch:" + (rejected.id || failure.title);
-            appendOperationLog(failure);
+          if (body.rejected && body.rejected.length > 0) {
+            setStatus("同步完成，" + body.rejected.length + " 个操作被拒绝");
+            appendOperationLog({
+              kind: "remote",
+              title: "离线队列同步部分完成",
+              detail: operations.length + " 个操作中 " + body.rejected.length + " 个被拒绝",
+              key: "remote:batch-partial:" + operations.map((envelope) => envelope.id).join("|")
+            });
+            for (const rejected of body.rejected) {
+              const envelope = findQueuedEnvelope(rejected.id, operations);
+              const failure = formatOperationFailure(
+                envelope ? envelope.operation : null,
+                rejected.error && rejected.error.message ? rejected.error : "服务器拒绝该操作"
+              );
+              failure.key = "failed:batch:" + (rejected.id || failure.title);
+              appendOperationLog(failure);
+            }
+          } else if (!options || !options.silent) {
+            setStatus("离线队列已同步");
+            appendOperationLog({
+              kind: "remote",
+              title: "离线队列同步完成",
+              detail: operations.length + " 个离线操作已确认",
+              key: "remote:batch:" + operations.map((envelope) => envelope.id).join("|")
+            });
           }
-        } else {
-          setStatus("离线队列已同步");
-          appendOperationLog({
-            kind: "remote",
-            title: "服务端已合并本地操作",
-            detail: operations.length + " 个离线操作已确认",
-            key: "remote:batch:" + operations.map((envelope) => envelope.id).join("|")
-          });
+          renderOperationLogs();
+        } catch (error) {
+          for (const item of operations) {
+            if (item.status === "sending") {
+              item.status = "pending";
+              item.error = {
+                name: "SyncError",
+                message: error && error.message ? error.message : String(error)
+              };
+            }
+          }
+          saveOfflineQueue();
+          if (!options || !options.silent) {
+            setStatus(error.message);
+          }
+        } finally {
+          state.offline.syncInFlight = false;
+          compactOfflineQueue();
+          saveOfflineQueue();
+          renderSyncState();
         }
-        renderOperationLogs();
       }
 
       els.login.addEventListener("click", () => login().catch((error) => setLoginStatus(error.message)));
@@ -2697,6 +2990,7 @@ export function renderHomePage(): string {
         const socket = state.socket;
         state.socket = null;
         state.offline.connected = false;
+        state.offline.connectionStatus = state.offline.simulated ? "simulated-offline" : "offline";
         if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
           socket.close();
         }
@@ -2710,6 +3004,7 @@ export function renderHomePage(): string {
         if (!state.token) return setStatus("请先登录");
         if (state.offline.simulated) {
           state.offline.simulated = false;
+          state.offline.connectionStatus = "offline";
           appendOperationLog({
             kind: "local",
             title: "恢复联网",
@@ -2722,6 +3017,7 @@ export function renderHomePage(): string {
           return;
         }
         state.offline.simulated = true;
+        state.offline.connectionStatus = "simulated-offline";
         appendOperationLog({
           kind: "local",
           title: "模拟断网",
@@ -2732,6 +3028,59 @@ export function renderHomePage(): string {
         disconnectWebSocket("已切换为模拟离线，后续操作会进入离线队列");
       }
 
+      function sendHeartbeat() {
+        if (!state.token || state.offline.simulated || !isSocketOpen()) return;
+        try {
+          state.socket.send(JSON.stringify({ type: "ping" }));
+        } catch {
+          markConnectionStale("心跳发送失败，连接可能已失效");
+        }
+      }
+
+      function markConnectionStale(message) {
+        if (state.offline.simulated) return;
+        if (state.offline.connectionStatus !== "stale") {
+          appendOperationLog({
+            kind: "failed",
+            title: "心跳超时，进入离线",
+            detail: message || "超过 " + Math.round(HEARTBEAT_TIMEOUT_MS / 1000) + " 秒未收到服务器响应",
+            key: "network:stale:" + Date.now()
+          });
+          renderOperationLogs();
+        }
+        const socket = state.socket;
+        state.socket = null;
+        state.offline.connected = false;
+        state.offline.connectionStatus = "stale";
+        if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+          socket.close();
+        }
+        renderSyncState();
+      }
+
+      function checkHeartbeatTimeout() {
+        if (!state.token || state.offline.simulated) return;
+        if (!isSocketOpen()) return;
+        if (!state.offline.lastPongAt) return;
+        if (Date.now() - state.offline.lastPongAt > HEARTBEAT_TIMEOUT_MS) {
+          markConnectionStale();
+        }
+      }
+
+      function autoReconnectIfNeeded() {
+        if (!state.token || state.offline.simulated || isSocketActive()) return;
+        connectWebSocket({ auto: true });
+      }
+
+      async function autoSyncOfflineQueue() {
+        compactOfflineQueue();
+        saveOfflineQueue();
+        renderSyncState();
+        if (!isConnectionUsable()) return;
+        if (syncableQueueForCurrentUser().length === 0) return;
+        await syncOfflineQueue({ silent: true });
+      }
+
       function connectWebSocket() {
         if (!state.token) return setStatus("请先登录");
         if (state.offline.simulated) return setStatus("当前处于模拟离线，请先点击恢复联网");
@@ -2740,10 +3089,19 @@ export function renderHomePage(): string {
         const socket = new WebSocket(protocol + "//" + location.host + "/ws?token=" + encodeURIComponent(state.token));
         state.socket = socket;
         state.offline.connected = false;
+        state.offline.connectionStatus = "connecting";
         renderSyncState();
         setStatus("正在联网...");
         socket.onmessage = (event) => {
           const message = JSON.parse(event.data);
+          if (message.type === "pong") {
+            state.offline.lastPongAt = Date.now();
+            state.offline.connected = true;
+            state.offline.connectionStatus = "connected";
+            renderSyncState();
+            syncOfflineQueue({ silent: true }).catch((error) => setStatus(error.message));
+            return;
+          }
           if (message.type === "view" || message.type === "operationApplied") {
             const appliedEnvelope = message.type === "operationApplied"
               ? findQueuedEnvelope(message.operationId)
@@ -2754,8 +3112,12 @@ export function renderHomePage(): string {
             if (message.type === "operationApplied" && message.operationId) {
               removeQueuedOperations([message.operationId]);
             }
-            appendOperationLog(formatRemoteOperationMessage(message, appliedEnvelope));
-            renderOperationLogs();
+            // 只记录有 change 信息的远端消息（跳过无操作者的通用广播）
+            const logEntry = formatRemoteOperationMessage(message, appliedEnvelope);
+            if (logEntry) {
+              appendOperationLog(logEntry);
+              renderOperationLogs();
+            }
             refreshSession()
               .catch((error) => setStatus(error.message))
               .finally(() => {
@@ -2772,23 +3134,29 @@ export function renderHomePage(): string {
             });
             renderOperationLogs();
             setStatus(message.error.message);
+            if (message.error.name === "AuthenticationError") {
+              logout();
+            }
           }
         };
         socket.onopen = async () => {
           if (state.socket !== socket) return;
-          state.offline.connected = true;
+          state.offline.connected = false;
+          state.offline.connectionStatus = "connecting";
           renderSyncState();
-          setStatus("WebSocket 已连接");
-          try {
-            await syncOfflineQueue();
-          } catch (error) {
-            setStatus(error.message);
-          }
+          setStatus("WebSocket 已连接，等待心跳确认");
+          sendHeartbeat();
         };
-        socket.onclose = () => {
+        socket.onclose = (event) => {
           if (state.socket !== socket) return;
           state.socket = null;
           state.offline.connected = false;
+          if (event.code === 4001) {
+            setLoginStatus("该账号已在其他地方登录，当前会话已失效。");
+            logout();
+            return;
+          }
+          state.offline.connectionStatus = state.offline.simulated ? "simulated-offline" : "offline";
           renderSyncState();
           if (!state.offline.simulated) {
             setStatus("WebSocket 已断开");
@@ -2798,6 +3166,7 @@ export function renderHomePage(): string {
           if (state.socket !== socket) return;
           state.socket = null;
           state.offline.connected = false;
+          state.offline.connectionStatus = "offline";
           renderSyncState();
         };
       }
@@ -2805,6 +3174,19 @@ export function renderHomePage(): string {
       els.connect.addEventListener("click", () => {
         toggleSimulatedNetwork();
       });
+
+      window.setInterval(() => {
+        sendHeartbeat();
+        checkHeartbeatTimeout();
+      }, HEARTBEAT_INTERVAL_MS);
+
+      window.setInterval(() => {
+        autoSyncOfflineQueue().catch((error) => setStatus(error.message));
+      }, AUTO_SYNC_INTERVAL_MS);
+
+      window.setInterval(() => {
+        autoReconnectIfNeeded();
+      }, RECONNECT_INTERVAL_MS);
 
       window.localStorage.removeItem("crdt-editor-session-token-v1");
       render();

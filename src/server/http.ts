@@ -32,7 +32,8 @@ export async function handleHttpRequest(
   request: import("node:http").IncomingMessage,
   response: import("node:http").ServerResponse,
   context: CollaborationContext,
-  onDocumentChanged: () => void
+  onDocumentChanged: () => void,
+  onSessionRevoked: (userIds: string[]) => void = () => {}
 ): Promise<void> {
   try {
     const url = new URL(request.url ?? "/", "http://localhost");
@@ -62,7 +63,10 @@ export async function handleHttpRequest(
         throw new AuthenticationError("Invalid username or password.");
       }
 
-      const session = createSession(context, account.id);
+      const { session, revokedUserIds } = createSession(context, account.id);
+      if (revokedUserIds.length > 0) {
+        onSessionRevoked(revokedUserIds);
+      }
       sendJson(response, 200, {
         ok: true,
         token: session.token,
@@ -122,7 +126,10 @@ export async function handleHttpRequest(
 
       context.accountStore?.saveUserAccount(account);
 
-      const session = createSession(context, account.id);
+      const { session, revokedUserIds } = createSession(context, account.id);
+      if (revokedUserIds.length > 0) {
+        onSessionRevoked(revokedUserIds);
+      }
 
       sendJson(response, 200, {
         ok: true,

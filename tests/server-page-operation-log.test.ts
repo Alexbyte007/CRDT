@@ -11,8 +11,7 @@ describe("home page operation log UI", () => {
     expect(html).toContain("renderOperationLogs");
     expect(html).toContain("修改节点「");
     expect(html).toContain("新增子节点「");
-    expect(html).toContain("服务端已合并本地操作");
-    expect(html).toContain("收到远端视图更新");
+    expect(html).toContain("服务端已合并本操作");
   });
 
   it("does not log raw operation JSON and exposes typed log styles", () => {
