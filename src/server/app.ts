@@ -8,6 +8,7 @@ import type {
   CollaborationServer,
   CollaborationServerOptions
 } from "./types";
+import { ServerUndoManager } from "./undo";
 import {
   broadcastViews,
   handleWebSocketConnection,
@@ -28,7 +29,8 @@ export function createCollaborationServer(
     processedOperationIds: new Set(),
     sessions: new Map(),
     policyVersion: 1,
-    policyEngine: new PolicyEngine(defaultPolicyConfig)
+    policyEngine: new PolicyEngine(defaultPolicyConfig),
+    undoManager: new ServerUndoManager({ maxDepth: 50 })
   };
 
   const clients = new Set<WebSocketClient>();

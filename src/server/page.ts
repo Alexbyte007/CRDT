@@ -634,6 +634,8 @@ export function renderHomePage(): string {
       <div class="topbar-center">
       </div>
       <div class="topbar-actions">
+        <button class="btn small app-mode-only" id="undoBtn" title="撤销 (Ctrl+Z)" disabled>↶ 撤销</button>
+        <button class="btn small app-mode-only" id="redoBtn" title="重做 (Ctrl+Y)" disabled>↷ 重做</button>
         <button class="icon-btn" id="themeToggle" title="切换主题" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; this.textContent = document.documentElement.dataset.theme === 'dark' ? '☀' : '☾';">☾</button>
         <div class="user-pill app-mode-only" id="headerUserPill">
           <span class="avatar">U</span>
@@ -837,7 +839,13 @@ export function renderHomePage(): string {
           queue: loadStoredOfflineQueue()
         },
         localLog: [],
-        remoteLog: []
+        remoteLog: [],
+        undo: {
+          canUndo: false,
+          canRedo: false,
+          undoCount: 0,
+          redoCount: 0
+        }
       };
 
       const els = {
@@ -888,7 +896,9 @@ export function renderHomePage(): string {
         markdownDrawerBackdrop: document.querySelector("#markdownDrawerBackdrop"),
         markdownEditorDrawer: document.querySelector("#markdownEditorDrawer"),
         localLogList: document.querySelector("#localLogList"),
-        remoteLogList: document.querySelector("#remoteLogList")
+        remoteLogList: document.querySelector("#remoteLogList"),
+        undoBtn: document.querySelector("#undoBtn"),
+        redoBtn: document.querySelector("#redoBtn")
       };
 
       const offlineStorageKey = "crdt-editor-offline-queue-v1";
@@ -1296,6 +1306,15 @@ export function renderHomePage(): string {
       }
 
       function operationLabel(operationType) {
+        // Handle undo/redo prefixes: "undo:renameNode" → "撤销重命名节点"
+        if (operationType && typeof operationType === "string") {
+          if (operationType.startsWith("undo:")) {
+            return "撤销" + operationLabel(operationType.slice(5));
+          }
+          if (operationType.startsWith("redo:")) {
+            return "重做" + operationLabel(operationType.slice(5));
+          }
+        }
         const labels = {
           addNode: "新增子节点",
           deleteNode: "删除节点",
@@ -1303,9 +1322,11 @@ export function renderHomePage(): string {
           renameNode: "重命名节点",
           updateContent: "修改节点内容",
           updateAcl: "修改节点权限",
-          updateAttrs: "修改节点属性"
+          updateAttrs: "修改节点属性",
+          resurrectNode: "删除节点",
+          resurrectNodeKeepChildren: "删除节点（保留子节点）"
         };
-        return labels[operationType] || ("执行操作「" + operationType + "」");
+        return labels[operationType] || ("操作「" + operationType + "」");
       }
 
       function formatRemoteOperationMessage(message, envelope) {
@@ -1328,11 +1349,16 @@ export function renderHomePage(): string {
         if (message.change) {
           const c = message.change;
           const desc = operationLabel(c.operationType);
+          // Resolve node title from the current view for undo/redo operations
+          const nodeTitle = c.nodeTitle || resolveNodeTitle(c.nodeId);
+          const detail = nodeTitle && nodeTitle !== c.nodeId
+            ? "「" + nodeTitle + "」"
+            : (c.nodeId ? "节点: " + c.nodeId : "");
           return {
             kind: "remote",
             operator: c.userName,
             title: desc,
-            detail: c.nodeTitle ? "目标: 「" + c.nodeTitle + "」" : (c.nodeId ? "节点: " + c.nodeId : ""),
+            detail: detail,
             key: "remote:view:" + (c.userId || "") + ":" + (c.operationType || "") + ":" + (message.stateVector || Date.now())
           };
         }
@@ -1390,6 +1416,14 @@ export function renderHomePage(): string {
         els.refresh.disabled = !state.token;
         els.connect.disabled = !state.token;
         els.connect.textContent = state.offline.simulated ? "恢复联网" : "模拟断网";
+        els.undoBtn.disabled = !state.undo.canUndo;
+        els.redoBtn.disabled = !state.undo.canRedo;
+        els.undoBtn.title = state.undo.canUndo
+          ? "撤销 (Ctrl+Z) — " + state.undo.undoCount + " 条可撤销"
+          : "撤销 (Ctrl+Z)";
+        els.redoBtn.title = state.undo.canRedo
+          ? "重做 (Ctrl+Y) — " + state.undo.redoCount + " 条可重做"
+          : "重做 (Ctrl+Y)";
       }
 
       function connectionStatusLabel() {
@@ -3224,6 +3258,64 @@ export function renderHomePage(): string {
         }
       }
 
+      function sendUndoRequest() {
+        if (!isConnectionUsable()) {
+          setStatus("连接不可用，无法撤销");
+          return;
+        }
+        state.socket.send(JSON.stringify({ type: "undo" }));
+      }
+
+      function sendRedoRequest() {
+        if (!isConnectionUsable()) {
+          setStatus("连接不可用，无法重做");
+          return;
+        }
+        state.socket.send(JSON.stringify({ type: "redo" }));
+      }
+
+      function updateUndoState() {
+        if (isConnectionUsable()) {
+          state.socket.send(JSON.stringify({ type: "undoStatus" }));
+        }
+      }
+
+      // Undo/Redo keyboard shortcuts
+      document.addEventListener("keydown", (event) => {
+        // Don't intercept if user is typing in an input or textarea
+        const tag = document.activeElement ? document.activeElement.tagName.toLowerCase() : "";
+        const isEditable = document.activeElement
+          ? document.activeElement.isContentEditable
+          : false;
+        if (tag === "input" || tag === "textarea" || tag === "select" || isEditable) {
+          return;
+        }
+        // Ctrl+Z (undo)
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !event.shiftKey) {
+          event.preventDefault();
+          if (state.undo.canUndo) {
+            sendUndoRequest();
+          }
+          return;
+        }
+        // Ctrl+Y or Ctrl+Shift+Z (redo)
+        if ((event.ctrlKey || event.metaKey) && (event.key.toLowerCase() === "y" || (event.key.toLowerCase() === "z" && event.shiftKey))) {
+          event.preventDefault();
+          if (state.undo.canRedo) {
+            sendRedoRequest();
+          }
+          return;
+        }
+      });
+
+      // Undo/Redo button click handlers
+      els.undoBtn.addEventListener("click", () => {
+        if (state.undo.canUndo) sendUndoRequest();
+      });
+      els.redoBtn.addEventListener("click", () => {
+        if (state.undo.canRedo) sendRedoRequest();
+      });
+
       async function syncOfflineQueue(options) {
         if (!state.token) return setStatus("请先登录");
         if (state.offline.syncInFlight) return;
@@ -3250,6 +3342,7 @@ export function renderHomePage(): string {
           state.view = body.view;
           state.stateVector = body.stateVector || state.stateVector;
           await refreshSession();
+          updateUndoState();
           render();
 
           if (body.rejected && body.rejected.length > 0) {
@@ -3486,9 +3579,61 @@ export function renderHomePage(): string {
             refreshSession()
               .catch((error) => setStatus(error.message))
               .finally(() => {
+                updateUndoState();
                 render();
                 setStatus("WebSocket 已更新视图");
               });
+          }
+          if (message.type === "undoApplied") {
+            state.view = message.view;
+            state.stateVector = message.stateVector || state.stateVector;
+            state.policyVersion = message.policyVersion || state.policyVersion;
+            const nodeTitle = resolveNodeTitle(message.nodeId);
+            const opLabel = operationLabel(message.originalOpType || "");
+            appendOperationLog({
+              kind: "local",
+              operator: state.user ? state.user.name : "",
+              title: "撤销" + opLabel + "「" + nodeTitle + "」",
+              detail: "已撤销",
+              coalesceKey: "undo:" + message.undoneEntryId
+            });
+            renderOperationLogs();
+            refreshSession()
+              .catch((error) => setStatus(error.message))
+              .finally(() => {
+                updateUndoState();
+                render();
+                setStatus("已撤销");
+              });
+          }
+          if (message.type === "redoApplied") {
+            state.view = message.view;
+            state.stateVector = message.stateVector || state.stateVector;
+            state.policyVersion = message.policyVersion || state.policyVersion;
+            const nodeTitle = resolveNodeTitle(message.nodeId);
+            const opLabel = operationLabel(message.originalOpType || "");
+            appendOperationLog({
+              kind: "local",
+              operator: state.user ? state.user.name : "",
+              title: "重做" + opLabel + "「" + nodeTitle + "」",
+              detail: "已重做",
+              coalesceKey: "redo:" + message.redoneEntryId
+            });
+            renderOperationLogs();
+            refreshSession()
+              .catch((error) => setStatus(error.message))
+              .finally(() => {
+                updateUndoState();
+                render();
+                setStatus("已重做");
+              });
+          }
+          if (message.type === "undoStatus") {
+            state.undo.canUndo = message.canUndo;
+            state.undo.canRedo = message.canRedo;
+            state.undo.undoCount = message.undoCount;
+            state.undo.redoCount = message.redoCount;
+            renderSyncState();
           }
           if (message.type === "error") {
             appendOperationLog({
@@ -3511,6 +3656,7 @@ export function renderHomePage(): string {
           renderSyncState();
           setStatus("WebSocket 已连接，等待心跳确认");
           sendHeartbeat();
+          updateUndoState();
         };
         socket.onclose = (event) => {
           if (state.socket !== socket) return;

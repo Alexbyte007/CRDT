@@ -10,7 +10,7 @@ import type {
 } from "./types";
 import { authenticateToken } from "./auth";
 import { requireUser } from "./http";
-import { applyViewOperationRequest } from "./operations";
+import { applyUndoRequest, applyRedoRequest, applyViewOperationRequest } from "./operations";
 
 export interface WebSocketClient {
   socket: WebSocket;
@@ -148,6 +148,86 @@ function handleClientMessage(
       onDocumentChanged();
       broadcastViews(context, clients, change);
     }
+    return;
+  }
+
+  if (message.type === "undo") {
+    const user = requireUser(context, client.userId);
+    try {
+      const result = applyUndoRequest(context, user);
+
+      sendServerMessage(client.socket, {
+        type: "undoApplied",
+        view: result.view,
+        stateVector: result.stateVector,
+        policyVersion: context.policyVersion,
+        undoneEntryId: result.entryId,
+        inverseOperationType: result.operationType,
+        originalOpType: result.originalOpType,
+        nodeId: result.nodeId,
+        change: {
+          userId: user.id,
+          userName: user.name,
+          operationType: `undo:${result.originalOpType}`,
+          nodeId: result.nodeId
+        }
+      });
+      onDocumentChanged();
+      broadcastViews(context, clients, {
+        userId: user.id,
+        userName: user.name,
+        operationType: `undo:${result.originalOpType}`,
+        nodeId: result.nodeId
+      });
+    } catch (error) {
+      sendServerMessage(client.socket, errorMessage(error));
+    }
+    return;
+  }
+
+  if (message.type === "redo") {
+    const user = requireUser(context, client.userId);
+    try {
+      const result = applyRedoRequest(context, user);
+
+      sendServerMessage(client.socket, {
+        type: "redoApplied",
+        view: result.view,
+        stateVector: result.stateVector,
+        policyVersion: context.policyVersion,
+        redoneEntryId: result.entryId,
+        redoOperationType: result.operationType,
+        originalOpType: result.originalOpType,
+        nodeId: result.nodeId,
+        change: {
+          userId: user.id,
+          userName: user.name,
+          operationType: `redo:${result.originalOpType}`,
+          nodeId: result.nodeId
+        }
+      });
+      onDocumentChanged();
+      broadcastViews(context, clients, {
+        userId: user.id,
+        userName: user.name,
+        operationType: `redo:${result.originalOpType}`,
+        nodeId: result.nodeId
+      });
+    } catch (error) {
+      sendServerMessage(client.socket, errorMessage(error));
+    }
+    return;
+  }
+
+  if (message.type === "undoStatus") {
+    const user = requireUser(context, client.userId);
+    sendServerMessage(client.socket, {
+      type: "undoStatus",
+      canUndo: context.undoManager.canUndo(user.id),
+      canRedo: context.undoManager.canRedo(user.id),
+      undoCount: context.undoManager.getUserEntries(user.id).length,
+      redoCount: context.undoManager.getUserRedoEntries(user.id).length
+    });
     return;
   }
 

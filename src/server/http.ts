@@ -26,7 +26,7 @@ import type {
 } from "./types";
 import { renderHomePage } from "./page";
 import { analyzeDeleteImpact } from "./delete-impact";
-import { applyBatchViewOperationRequest, applyViewOperationRequest } from "./operations";
+import { applyBatchViewOperationRequest, applyUndoRequest, applyRedoRequest, applyViewOperationRequest } from "./operations";
 
 export async function handleHttpRequest(
   request: import("node:http").IncomingMessage,
@@ -291,6 +291,34 @@ export async function handleHttpRequest(
         rejected: result.rejected,
         view: result.view,
         stateVector: result.stateVector
+      });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/undo") {
+      const user = authenticateRequest(context, request);
+      const result = applyUndoRequest(context, user);
+      onDocumentChanged();
+      sendJson(response, 200, {
+        ok: true,
+        view: result.view,
+        stateVector: result.stateVector,
+        undoneEntryId: result.entryId,
+        inverseOperationType: result.operationType
+      });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/redo") {
+      const user = authenticateRequest(context, request);
+      const result = applyRedoRequest(context, user);
+      onDocumentChanged();
+      sendJson(response, 200, {
+        ok: true,
+        view: result.view,
+        stateVector: result.stateVector,
+        redoneEntryId: result.entryId,
+        redoOperationType: result.operationType
       });
       return;
     }
