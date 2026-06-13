@@ -625,7 +625,8 @@ export function renderHomePage(): string {
     .markdown-editor-pane.hidden,
     .markdown-preview-pane.hidden { display: none; }
     .markdown-preview-pane {
-      border-left: 1px solid var(--line); background: color-mix(in srgb, var(--surface-solid) 88%, var(--surface-2));
+      position: relative; border-left: 1px solid var(--line);
+      background: color-mix(in srgb, var(--surface-solid) 88%, var(--surface-2));
     }
     .markdown-editor-grid.preview-only .markdown-preview-pane { border-left: 0; }
     .markdown-editor-textarea {
@@ -638,21 +639,55 @@ export function renderHomePage(): string {
       color: var(--text); font-size: 14px; line-height: 1.68; overflow-wrap: anywhere;
     }
     .markdown-preview-pane .markdown-body { padding: 18px 20px; }
+    .markdown-body[data-md-preview-editable="true"] {
+      min-height: 120px; border-radius: 14px; outline: none; cursor: text;
+      transition: background .16s ease, box-shadow .16s ease;
+    }
+    .markdown-body[data-md-preview-editable="true"]:focus {
+      background: color-mix(in srgb, var(--surface-solid) 82%, var(--surface-2));
+      box-shadow: inset 0 0 0 2px rgba(79,70,229,.36);
+    }
+    .node-markdown-preview-body[data-md-preview-editable="true"] {
+      padding: 8px; margin: -8px; padding-right: 8px;
+    }
+    .markdown-body[data-md-preview-editable="true"][data-empty="true"]::before {
+      content: attr(data-placeholder); color: var(--muted); font-size: 13px;
+    }
+    .markdown-body[data-md-preview-editable="true"] a { cursor: text; }
     .markdown-body > *:first-child { margin-top: 0; }
     .markdown-body > *:last-child { margin-bottom: 0; }
     .markdown-body h1,
     .markdown-body h2,
-    .markdown-body h3 { margin: 18px 0 10px; line-height: 1.28; color: var(--text); }
+    .markdown-body h3,
+    .markdown-body h4,
+    .markdown-body h5 { margin: 18px 0 10px; line-height: 1.28; color: var(--text); }
     .markdown-body h1 { font-size: 24px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
     .markdown-body h2 { font-size: 20px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
     .markdown-body h3 { font-size: 16px; }
+    .markdown-body h4 { font-size: 15px; }
+    .markdown-body h5 { font-size: 14px; color: var(--muted); }
     .markdown-body p { margin: 9px 0; }
     .markdown-body ul,
     .markdown-body ol { margin: 9px 0; padding-left: 24px; }
     .markdown-body li { margin: 4px 0; }
+    .markdown-body .markdown-task-list { padding-left: 4px; list-style: none; }
+    .markdown-body .markdown-task-list li {
+      display: flex; align-items: flex-start; gap: 8px;
+    }
+    .markdown-task-checkbox {
+      width: 14px; height: 14px; flex: 0 0 auto; margin-top: .32em;
+      border: 1.5px solid var(--muted); border-radius: 4px; background: var(--surface-solid);
+    }
+    .markdown-task-list li[data-md-task-checked="true"] .markdown-task-checkbox {
+      border-color: var(--brand); background: rgba(79,70,229,.16);
+    }
     .markdown-body blockquote {
       margin: 12px 0; padding: 8px 12px; border-left: 4px solid var(--brand);
       color: var(--muted); background: rgba(79,70,229,.08); border-radius: 0 12px 12px 0;
+    }
+    .markdown-highlight-block {
+      margin: 12px 0; padding: 10px 12px; border: 1px solid rgba(217,119,6,.22);
+      border-radius: 12px; background: rgba(245,158,11,.15); color: var(--text);
     }
     .markdown-body code {
       padding: 2px 5px; border-radius: 6px; background: rgba(99,102,241,.12);
@@ -671,6 +706,30 @@ export function renderHomePage(): string {
     .markdown-body th,
     .markdown-body td { border: 1px solid var(--line); padding: 7px 9px; text-align: left; }
     .markdown-body th { background: var(--surface-2); }
+    .markdown-block-menu-trigger {
+      position: fixed; z-index: 90; width: 28px; height: 28px; border-radius: 8px;
+      display: grid; place-items: center; border: 1px solid var(--line);
+      color: var(--muted); background: var(--surface-solid); box-shadow: 0 8px 22px rgba(35,45,90,.13);
+    }
+    .markdown-block-menu-trigger:hover,
+    .markdown-block-menu-trigger.active { color: var(--brand); border-color: rgba(79,70,229,.32); }
+    .markdown-block-menu-panel {
+      position: fixed; z-index: 91; width: 252px; padding: 10px;
+      border: 1px solid var(--line); border-radius: 14px; background: var(--surface-solid);
+      box-shadow: var(--shadow-soft);
+    }
+    .markdown-block-menu-grid {
+      display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px;
+    }
+    .markdown-block-menu-option {
+      min-width: 0; min-height: 34px; border-radius: 9px; padding: 6px;
+      display: grid; place-items: center; color: var(--text); background: transparent;
+      font-size: 13px; font-weight: 800;
+    }
+    .markdown-block-menu-option:hover { background: var(--surface-2); color: var(--brand); }
+    .markdown-block-menu-wide {
+      grid-column: span 2; justify-items: start; padding-inline: 9px; font-weight: 700;
+    }
     @keyframes markdownBackdropIn {
       from { opacity: 0; }
       to { opacity: 1; }
@@ -974,6 +1033,42 @@ export function renderHomePage(): string {
       </div>
     </div>
 
+    <div id="confirmDialog" class="modal hidden" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true">
+        <h2 id="confirmDialogTitle" class="modal-title">确认操作</h2>
+        <p id="confirmDialogCopy" class="modal-copy"></p>
+        <div class="modal-actions">
+          <button id="confirmDialogCancel" type="button" class="btn secondary">取消</button>
+          <button id="confirmDialogOk" type="button" class="btn primary">确定</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="addNodeDialog" class="modal hidden" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true">
+        <h2 class="modal-title">添加新节点</h2>
+        <p id="addNodeParentInfo" class="modal-copy"></p>
+        <div style="display:grid;gap:14px;">
+          <label style="display:grid;gap:5px;font-size:12px;color:var(--muted);font-weight:700;">
+            <span>节点名称</span>
+            <input id="addNodeTitle" type="text" placeholder="输入节点名称" style="width:100%;min-height:38px;border:1px solid var(--line);border-radius:11px;padding:8px 12px;background:var(--surface-solid);color:var(--text);font-size:13px;outline:none;">
+          </label>
+          <label style="display:grid;gap:5px;font-size:12px;color:var(--muted);font-weight:700;">
+            <span>节点类型</span>
+            <select id="addNodeType" style="width:100%;min-height:38px;border:1px solid var(--line);border-radius:11px;padding:8px 12px;background:var(--surface-solid);color:var(--text);font-size:13px;outline:none;appearance:none;background-image:url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2716%27 height=%2716%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%2368758e%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpolyline points=%276 9 12 15 18 9%27%3E%3C/polyline%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 12px center;padding-right:36px;cursor:pointer;">
+              <option value="doc">项目模块</option>
+              <option value="task">任务</option>
+            </select>
+          </label>
+          <div id="addNodeAclArea"></div>
+        </div>
+        <div class="modal-actions">
+          <button id="addNodeDialogCancel" type="button" class="btn secondary">取消</button>
+          <button id="addNodeDialogOk" type="button" class="btn primary">确定</button>
+        </div>
+      </div>
+    </div>
+
     <div id="settingsDialog" class="modal hidden" aria-hidden="true">
       <div class="modal-card settings-card" role="dialog" aria-modal="true">
         <button class="settings-close" id="settingsClose" type="button" title="关闭">✕</button>
@@ -1065,6 +1160,23 @@ export function renderHomePage(): string {
     <div id="markdownDrawerBackdrop" class="markdown-drawer-backdrop hidden" aria-hidden="true">
       <aside id="markdownEditorDrawer" class="markdown-drawer" role="dialog" aria-modal="true" aria-labelledby="markdownDrawerTitle"></aside>
     </div>
+    <button id="markdownBlockMenuTrigger" class="markdown-block-menu-trigger hidden" type="button" title="块格式" aria-label="块格式">⋮</button>
+    <div id="markdownBlockMenuPanel" class="markdown-block-menu-panel hidden" role="menu" aria-label="Markdown 块格式">
+      <div class="markdown-block-menu-grid">
+        <button type="button" class="markdown-block-menu-option" data-md-block-format="paragraph" role="menuitem" title="正文">T</button>
+        <button type="button" class="markdown-block-menu-option" data-md-block-format="h1" role="menuitem" title="一级标题">H1</button>
+        <button type="button" class="markdown-block-menu-option" data-md-block-format="h2" role="menuitem" title="二级标题">H2</button>
+        <button type="button" class="markdown-block-menu-option" data-md-block-format="h3" role="menuitem" title="三级标题">H3</button>
+        <button type="button" class="markdown-block-menu-option" data-md-block-format="h4" role="menuitem" title="四级标题">H4</button>
+        <button type="button" class="markdown-block-menu-option" data-md-block-format="h5" role="menuitem" title="五级标题">H5</button>
+        <button type="button" class="markdown-block-menu-option" data-md-block-format="bullet-list" role="menuitem" title="项目列表">•</button>
+        <button type="button" class="markdown-block-menu-option" data-md-block-format="ordered-list" role="menuitem" title="编号列表">1.</button>
+        <button type="button" class="markdown-block-menu-option" data-md-block-format="todo-list" role="menuitem" title="待办列表">☑</button>
+        <button type="button" class="markdown-block-menu-option" data-md-block-format="quote" role="menuitem" title="引用文字">❞</button>
+        <button type="button" class="markdown-block-menu-option markdown-block-menu-wide" data-md-block-format="highlight" role="menuitem" title="高亮块">高亮</button>
+        <button type="button" class="markdown-block-menu-option markdown-block-menu-wide" data-md-block-format="code-block" role="menuitem" title="代码块">&lt;/&gt;</button>
+      </div>
+    </div>
 
 <script>
       const state = {
@@ -1155,6 +1267,8 @@ export function renderHomePage(): string {
         noticeDialogOk: document.querySelector("#noticeDialogOk"),
         markdownDrawerBackdrop: document.querySelector("#markdownDrawerBackdrop"),
         markdownEditorDrawer: document.querySelector("#markdownEditorDrawer"),
+        markdownBlockMenuTrigger: document.querySelector("#markdownBlockMenuTrigger"),
+        markdownBlockMenuPanel: document.querySelector("#markdownBlockMenuPanel"),
         localLogList: document.querySelector("#localLogList"),
         remoteLogList: document.querySelector("#remoteLogList"),
         logLimitSelect: document.querySelector("#logLimitSelect"),
@@ -1182,6 +1296,18 @@ export function renderHomePage(): string {
         changePasswordBtn: document.querySelector("#changePasswordBtn"),
         settingsProfileStatus: document.querySelector("#settingsProfileStatus"),
         clearCacheBtn: document.querySelector("#clearCacheBtn"),
+        confirmDialog: document.querySelector("#confirmDialog"),
+        confirmDialogTitle: document.querySelector("#confirmDialogTitle"),
+        confirmDialogCopy: document.querySelector("#confirmDialogCopy"),
+        confirmDialogCancel: document.querySelector("#confirmDialogCancel"),
+        confirmDialogOk: document.querySelector("#confirmDialogOk"),
+        addNodeDialog: document.querySelector("#addNodeDialog"),
+        addNodeParentInfo: document.querySelector("#addNodeParentInfo"),
+        addNodeTitle: document.querySelector("#addNodeTitle"),
+        addNodeType: document.querySelector("#addNodeType"),
+        addNodeAclArea: document.querySelector("#addNodeAclArea"),
+        addNodeDialogCancel: document.querySelector("#addNodeDialogCancel"),
+        addNodeDialogOk: document.querySelector("#addNodeDialogOk"),
         avatarFileInput: document.querySelector("#avatarFileInput"),
         uploadAvatarBtn: document.querySelector("#uploadAvatarBtn"),
         removeAvatarBtn: document.querySelector("#removeAvatarBtn")
@@ -1203,6 +1329,7 @@ export function renderHomePage(): string {
         { value: 20, label: "显示 20 条" },
         { value: Infinity, label: "完全显示" }
       ];
+      let activeMarkdownBlockMenuTarget = null;
 
       function loadLogLimit() {
         const raw = window.localStorage.getItem("crdt-log-limit");
@@ -2082,7 +2209,20 @@ export function renderHomePage(): string {
 
         const body = document.createElement("div");
         body.className = "markdown-body node-markdown-preview-body";
-        body.innerHTML = markdownToHtml(draft.content);
+        if (node.permissions.canEditContent) {
+          body.contentEditable = "true";
+          body.spellcheck = false;
+          body.setAttribute("role", "textbox");
+          body.setAttribute("aria-multiline", "true");
+          body.dataset.nodeId = node.id;
+          body.dataset.field = "content";
+          body.dataset.mdPreviewEditable = "true";
+          body.dataset.mdPreviewScope = "tree";
+          body.dataset.placeholder = "直接编辑预览内容";
+        }
+        body.innerHTML = markdownPreviewHtml(draft.content, node.permissions.canEditContent);
+        setEditableMarkdownEmptyState(body);
+        bindEditableMarkdownPreview(body, node);
         preview.appendChild(body);
         container.appendChild(preview);
       }
@@ -2327,7 +2467,7 @@ export function renderHomePage(): string {
             '<div class="markdown-drawer-actions">' +
               '<div id="markdownEditorMode" class="markdown-mode-tabs" aria-label="Markdown 视图模式">' +
                 '<button type="button" data-markdown-mode="write" class="' + (mode === "write" ? "active" : "") + '"' + (!canEdit ? " disabled" : "") + '>Write</button>' +
-                '<button type="button" data-markdown-mode="preview" class="' + (mode === "preview" ? "active" : "") + '>Preview</button>' +
+                '<button type="button" data-markdown-mode="preview" class="' + (mode === "preview" ? "active" : "") + '">Preview</button>' +
                 '<button type="button" data-markdown-mode="split" class="' + (mode === "split" ? "active" : "") + '"' + (!canEdit ? " disabled" : "") + '>Split</button>' +
               '</div>' +
               '<button type="button" class="btn small secondary" data-md-close>关闭</button>' +
@@ -2351,7 +2491,7 @@ export function renderHomePage(): string {
               '<textarea id="markdownContentEditor" class="markdown-editor-textarea" data-node-id="' + escapeHtml(node.id) + '" data-field="content" spellcheck="false" placeholder="用 Markdown 记录节点说明、任务拆解、接口草稿或协作笔记...">' + escapeHtml(draft.content) + '</textarea>' +
             '</section>' +
             '<section class="markdown-preview-pane' + (showPreview ? "" : " hidden") + '" aria-label="Markdown 预览">' +
-              '<div id="markdownLivePreview" class="markdown-body">' + markdownToHtml(draft.content) + '</div>' +
+              '<div id="markdownLivePreview" class="markdown-body"' + editableMarkdownPreviewAttrs(node, canEdit, "drawer") + '>' + markdownPreviewHtml(draft.content, canEdit) + '</div>' +
             '</section>' +
           '</div>';
 
@@ -2388,12 +2528,13 @@ export function renderHomePage(): string {
         };
 
         const editor = els.markdownEditorDrawer.querySelector("#markdownContentEditor");
-        if (!canEdit || !editor) return;
+        const livePreview = els.markdownEditorDrawer.querySelector("#markdownLivePreview");
+        if (!canEdit) return;
+        bindEditableMarkdownPreview(livePreview, node);
+        if (!editor) return;
 
         editor.addEventListener("input", () => {
-          getNodeDraft(node).content = editor.value;
-          scheduleAutoSave(node.id);
-          refreshMarkdownPreview(node.id, editor.value);
+          syncMarkdownDraft(node, editor.value);
         });
         editor.addEventListener("blur", () => autoSaveNode(node.id).catch((error) => setStatus(error.message)));
 
@@ -2416,6 +2557,509 @@ export function renderHomePage(): string {
             insertMarkdownAtCursor(fence + "\\ncode\\n" + fence, 4, 4);
           });
         }
+      }
+
+      function editableMarkdownPreviewAttrs(node, canEdit, scope) {
+        if (!canEdit) return "";
+        return (
+          ' contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true"' +
+          ' data-node-id="' + escapeHtml(node.id) + '"' +
+          ' data-field="content" data-md-preview-editable="true" data-md-preview-scope="' + escapeHtml(scope || "drawer") + '"' +
+          ' data-placeholder="直接编辑预览内容"'
+        );
+      }
+
+      function markdownPreviewHtml(markdown, editable) {
+        const source = String(markdown || "");
+        if (editable && !source.trim()) return "";
+        return markdownToHtml(source);
+      }
+
+      function bindEditableMarkdownPreview(preview, node) {
+        if (!preview || preview.dataset.mdPreviewEditable !== "true") return;
+        if (preview.dataset.mdPreviewBound === "true") return;
+        preview.dataset.mdPreviewBound = "true";
+        setEditableMarkdownEmptyState(preview);
+        preview.addEventListener("input", () => syncMarkdownDraftFromPreview(node, preview));
+        preview.addEventListener("blur", () => autoSaveNode(node.id).catch((error) => setStatus(error.message)));
+        preview.addEventListener("focus", () => updateMarkdownBlockMenuForSelection(preview));
+        preview.addEventListener("keyup", () => updateMarkdownBlockMenuForSelection(preview));
+        preview.addEventListener("mouseup", () => updateMarkdownBlockMenuForSelection(preview));
+        preview.addEventListener("paste", handleEditableMarkdownPaste);
+        preview.addEventListener("click", (event) => {
+          if (event.target && event.target.closest && event.target.closest("a")) {
+            event.preventDefault();
+          }
+          updateMarkdownBlockMenuForSelection(preview);
+        });
+        preview.addEventListener("keydown", (event) => {
+          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+            event.preventDefault();
+            autoSaveNode(node.id).catch((error) => setStatus(error.message));
+          }
+        });
+      }
+
+      function editablePreviewFromSelection() {
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0) return null;
+        let node = selection.anchorNode;
+        if (node && node.nodeType === 3) node = node.parentElement;
+        return node && node.closest ? node.closest('[data-md-preview-editable="true"]') : null;
+      }
+
+      function closestMarkdownBlockFromSelection(preview) {
+        const selection = window.getSelection();
+        let node = selection && selection.anchorNode ? selection.anchorNode : null;
+        if (!node || !preview.contains(node)) return firstEditableMarkdownBlock(preview);
+        if (node.nodeType === 3) node = node.parentElement;
+        while (node && node !== preview) {
+          if (node.nodeType === 1) {
+            const element = node;
+            const tag = element.tagName.toLowerCase();
+            if (tag === "li") return element;
+            if (element.parentElement === preview && isEditableMarkdownBlock(element)) return element;
+          }
+          node = node.parentElement;
+        }
+        return firstEditableMarkdownBlock(preview) || preview;
+      }
+
+      function firstEditableMarkdownBlock(preview) {
+        return Array.from(preview.children || []).find(isEditableMarkdownBlock) || preview;
+      }
+
+      function isEditableMarkdownBlock(element) {
+        if (!element || !element.tagName) return false;
+        return /^(h[1-6]|p|div|ul|ol|blockquote|pre|table|section|article|li)$/i.test(element.tagName);
+      }
+
+      function selectionCaretRect(block) {
+        const selection = window.getSelection();
+        if (selection && selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0).cloneRange();
+          range.collapse(true);
+          const rect = range.getBoundingClientRect();
+          if (rect && rect.height > 0 && rect.width >= 0) return rect;
+        }
+        return block.getBoundingClientRect();
+      }
+
+      function updateMarkdownBlockMenuForSelection(preview) {
+        const activePreview = preview || editablePreviewFromSelection();
+        if (!activePreview || activePreview.dataset.mdPreviewEditable !== "true") {
+          hideMarkdownBlockMenu();
+          return;
+        }
+        if (document.activeElement !== activePreview) return;
+        const block = closestMarkdownBlockFromSelection(activePreview);
+        if (!block) {
+          hideMarkdownBlockMenu();
+          return;
+        }
+        const blockRect = block.getBoundingClientRect();
+        if (blockRect.width === 0 && blockRect.height === 0) {
+          hideMarkdownBlockMenu();
+          return;
+        }
+        const caretRect = selectionCaretRect(block);
+        const top = Math.max(8, Math.min(window.innerHeight - 34, (caretRect.top || blockRect.top) - 3));
+        const left = Math.max(8, blockRect.left - 36);
+        activeMarkdownBlockMenuTarget = { preview: activePreview, block };
+        els.markdownBlockMenuTrigger.style.top = top + "px";
+        els.markdownBlockMenuTrigger.style.left = left + "px";
+        els.markdownBlockMenuTrigger.classList.remove("hidden");
+      }
+
+      function hideMarkdownBlockMenu() {
+        if (els.markdownBlockMenuTrigger) els.markdownBlockMenuTrigger.classList.add("hidden");
+        closeMarkdownBlockMenuPanel();
+        activeMarkdownBlockMenuTarget = null;
+      }
+
+      function openMarkdownBlockMenuPanel() {
+        if (!activeMarkdownBlockMenuTarget) return;
+        const triggerRect = els.markdownBlockMenuTrigger.getBoundingClientRect();
+        const panelWidth = 252;
+        const left = Math.max(8, Math.min(window.innerWidth - panelWidth - 8, triggerRect.right + 8));
+        const top = Math.max(8, Math.min(window.innerHeight - 260, triggerRect.top - 4));
+        els.markdownBlockMenuTrigger.classList.add("active");
+        els.markdownBlockMenuPanel.style.left = left + "px";
+        els.markdownBlockMenuPanel.style.top = top + "px";
+        els.markdownBlockMenuPanel.classList.remove("hidden");
+      }
+
+      function closeMarkdownBlockMenuPanel() {
+        if (els.markdownBlockMenuTrigger) els.markdownBlockMenuTrigger.classList.remove("active");
+        if (els.markdownBlockMenuPanel) els.markdownBlockMenuPanel.classList.add("hidden");
+      }
+
+      function markdownBlockPlainText(block) {
+        if (!block) return "";
+        if (block.tagName && block.tagName.toLowerCase() === "pre") {
+          const code = block.querySelector("code");
+          return String((code || block).textContent || "").trim();
+        }
+        return String(block.textContent || "").replace(/\\u00a0/g, " ").trim();
+      }
+
+      function createMarkdownBlockElement(format, text) {
+        const safeText = text || (format === "code-block" ? "code" : "正文");
+        if (/^h[1-5]$/.test(format)) {
+          const heading = document.createElement(format);
+          heading.textContent = safeText;
+          return heading;
+        }
+        if (format === "bullet-list" || format === "ordered-list" || format === "todo-list") {
+          const list = document.createElement(format === "ordered-list" ? "ol" : "ul");
+          if (format === "todo-list") list.className = "markdown-task-list";
+          const item = document.createElement("li");
+          if (format === "todo-list") {
+            item.dataset.mdTaskItem = "true";
+            item.dataset.mdTaskChecked = "false";
+            const checkbox = document.createElement("span");
+            checkbox.className = "markdown-task-checkbox";
+            checkbox.setAttribute("aria-hidden", "true");
+            item.appendChild(checkbox);
+          }
+          item.appendChild(document.createTextNode(safeText));
+          list.appendChild(item);
+          return list;
+        }
+        if (format === "quote") {
+          const quote = document.createElement("blockquote");
+          quote.textContent = safeText;
+          return quote;
+        }
+        if (format === "highlight") {
+          const highlight = document.createElement("div");
+          highlight.className = "markdown-highlight-block";
+          highlight.dataset.mdBlock = "highlight";
+          highlight.textContent = safeText;
+          return highlight;
+        }
+        if (format === "code-block") {
+          const pre = document.createElement("pre");
+          const code = document.createElement("code");
+          code.textContent = safeText;
+          pre.appendChild(code);
+          return pre;
+        }
+        const paragraph = document.createElement("p");
+        paragraph.textContent = safeText;
+        return paragraph;
+      }
+
+      function replacementTargetForMarkdownBlock(block, preview) {
+        if (!block || block === preview) return preview;
+        if (block.tagName && block.tagName.toLowerCase() === "li") {
+          const list = block.closest("ul,ol");
+          return list && preview.contains(list) ? list : block;
+        }
+        return block;
+      }
+
+      function applyMarkdownBlockFormat(format) {
+        const target = activeMarkdownBlockMenuTarget;
+        if (!target || !target.preview) return;
+        const preview = target.preview;
+        const node = state.view ? findNodeById(preview.dataset.nodeId, state.view.roots) : null;
+        if (!node) return;
+        const currentBlock = target.block && preview.contains(target.block)
+          ? target.block
+          : closestMarkdownBlockFromSelection(preview);
+        const replaceTarget = replacementTargetForMarkdownBlock(currentBlock, preview);
+        const replacement = createMarkdownBlockElement(format, markdownBlockPlainText(currentBlock));
+        if (replaceTarget === preview) {
+          preview.innerHTML = "";
+          preview.appendChild(replacement);
+        } else {
+          replaceTarget.replaceWith(replacement);
+        }
+        preview.focus({ preventScroll: true });
+        placeCaretAtEnd(replacement);
+        syncMarkdownDraftFromPreview(node, preview);
+        closeMarkdownBlockMenuPanel();
+        activeMarkdownBlockMenuTarget = { preview, block: replacement };
+        updateMarkdownBlockMenuForSelection(preview);
+      }
+
+      function placeCaretAtEnd(element) {
+        const selection = window.getSelection();
+        if (!selection) return;
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+
+      function handleEditableMarkdownPaste(event) {
+        const text = event.clipboardData ? event.clipboardData.getData("text/plain") : "";
+        if (!text) return;
+        event.preventDefault();
+        insertPlainTextAtSelection(text);
+      }
+
+      function insertPlainTextAtSelection(text) {
+        if (document.queryCommandSupported && document.queryCommandSupported("insertText")) {
+          document.execCommand("insertText", false, text);
+          return;
+        }
+
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0) return;
+        const range = selection.getRangeAt(0);
+        range.deleteContents();
+        const fragment = document.createDocumentFragment();
+        const lines = String(text).replace(/\\r\\n/g, "\\n").split("\\n");
+        lines.forEach((line, index) => {
+          if (index > 0) fragment.appendChild(document.createElement("br"));
+          fragment.appendChild(document.createTextNode(line));
+        });
+        const last = fragment.lastChild;
+        range.insertNode(fragment);
+        if (last) {
+          range.setStartAfter(last);
+          range.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+        if (document.activeElement) {
+          document.activeElement.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      }
+
+      function syncMarkdownDraftFromPreview(node, preview) {
+        const markdown = markdownPreviewToMarkdown(preview);
+        syncMarkdownDraft(node, markdown, { skipPreviewElement: preview });
+        setEditableMarkdownEmptyState(preview);
+      }
+
+      function syncMarkdownDraft(node, markdown, options = {}) {
+        const draft = getNodeDraft(node);
+        draft.content = markdown;
+        scheduleAutoSave(node.id);
+
+        const editor = document.querySelector(
+          '#markdownContentEditor[data-node-id="' + cssEscape(node.id) + '"]'
+        );
+        if (editor && editor.value !== markdown) {
+          editor.value = markdown;
+        }
+
+        refreshMarkdownPreview(node.id, markdown, {
+          skipPreviewElement: options.skipPreviewElement || null
+        });
+      }
+
+      function setEditableMarkdownEmptyState(preview) {
+        if (!preview || preview.dataset.mdPreviewEditable !== "true") return;
+        const text = String(preview.textContent || "").replace(/\\u00a0/g, " ").trim();
+        preview.dataset.empty = text ? "false" : "true";
+      }
+
+      function markdownPreviewToMarkdown(preview) {
+        if (!preview) return "";
+        return normalizeMarkdown(markdownBlocksFromNodes(preview.childNodes, "").join("\\n\\n"));
+      }
+
+      function markdownBlocksFromNodes(nodes, indent) {
+        const blocks = [];
+        let inlineBuffer = "";
+
+        function flushInlineBuffer() {
+          const text = normalizeMarkdown(inlineBuffer);
+          if (text) blocks.push(indent + text);
+          inlineBuffer = "";
+        }
+
+        for (const node of Array.from(nodes || [])) {
+          if (node.nodeType === 3) {
+            inlineBuffer += node.textContent || "";
+            continue;
+          }
+          if (node.nodeType !== 1) continue;
+          const element = node;
+          if (element.classList && element.classList.contains("markdown-empty")) continue;
+          const tag = element.tagName.toLowerCase();
+          if (tag === "br") {
+            inlineBuffer += "\\n";
+            continue;
+          }
+
+          const block = markdownBlockFromElement(element, indent);
+          if (block) {
+            flushInlineBuffer();
+            blocks.push(block);
+          } else {
+            inlineBuffer += inlineMarkdownFromNode(element);
+          }
+        }
+
+        flushInlineBuffer();
+        return blocks.filter(Boolean);
+      }
+
+      function markdownBlockFromElement(element, indent) {
+        const tag = element.tagName.toLowerCase();
+        if (/^h[1-6]$/.test(tag)) {
+          const level = Math.min(Number(tag.slice(1)), 3);
+          const text = normalizeMarkdown(inlineMarkdownFromChildren(element));
+          return text ? "#".repeat(level) + " " + text : "";
+        }
+        if (tag === "ul" || tag === "ol") {
+          return markdownListFromElement(element, tag === "ol", indent);
+        }
+        if (tag === "blockquote") {
+          const nested = markdownBlocksFromNodes(element.childNodes, "").join("\\n\\n");
+          const text = nested || normalizeMarkdown(inlineMarkdownFromChildren(element));
+          return text
+            ? text.split("\\n").map((line) => "> " + line).join("\\n")
+            : "";
+        }
+        if (
+          (tag === "div" || tag === "section" || tag === "article") &&
+          (element.dataset.mdBlock === "highlight" || element.classList.contains("markdown-highlight-block"))
+        ) {
+          const text = normalizeMarkdown(inlineMarkdownFromChildren(element));
+          return text ? text.split("\\n").map((line) => "!! " + line).join("\\n") : "";
+        }
+        if (tag === "pre") {
+          const fence = String.fromCharCode(96).repeat(3);
+          const codeElement = element.querySelector("code");
+          const code = String((codeElement || element).textContent || "").replace(/\\n$/, "");
+          return fence + "\\n" + code + "\\n" + fence;
+        }
+        if (tag === "table") {
+          return markdownTableFromElement(element);
+        }
+        if (hasMarkdownBlockChild(element)) {
+          return markdownBlocksFromNodes(element.childNodes, indent).join("\\n\\n");
+        }
+        if (tag === "p" || tag === "div" || tag === "section" || tag === "article") {
+          return normalizeMarkdown(inlineMarkdownFromChildren(element));
+        }
+        return "";
+      }
+
+      function hasMarkdownBlockChild(element) {
+        return Array.from(element.children || []).some((child) =>
+          /^(h[1-6]|p|div|ul|ol|blockquote|pre|table|section|article)$/i.test(child.tagName)
+        );
+      }
+
+      function markdownListFromElement(list, ordered, indent) {
+        const items = [];
+        let index = 1;
+        const taskList = list.classList && list.classList.contains("markdown-task-list");
+        for (const child of Array.from(list.children || [])) {
+          if (child.tagName.toLowerCase() !== "li") continue;
+          const taskItem = taskList || child.dataset.mdTaskItem === "true";
+          const marker = taskItem
+            ? "- [" + (child.dataset.mdTaskChecked === "true" ? "x" : " ") + "] "
+            : ordered
+              ? String(index) + ". "
+              : "- ";
+          const item = markdownListItemToMarkdown(child, marker, indent);
+          if (item) items.push(item);
+          index += 1;
+        }
+        return items.join("\\n");
+      }
+
+      function markdownListItemToMarkdown(item, marker, indent) {
+        const inlineParts = [];
+        const nestedBlocks = [];
+        for (const child of Array.from(item.childNodes || [])) {
+          if (child.nodeType === 1 && /^(ul|ol)$/i.test(child.tagName)) {
+            nestedBlocks.push(markdownListFromElement(child, child.tagName.toLowerCase() === "ol", indent + "  "));
+          } else {
+            inlineParts.push(inlineMarkdownFromNode(child));
+          }
+        }
+
+        const text = normalizeMarkdown(inlineParts.join(""));
+        const lines = text ? text.split("\\n") : [""];
+        const rendered = [indent + marker + lines[0]];
+        for (const line of lines.slice(1)) {
+          rendered.push(indent + "  " + line);
+        }
+        for (const nested of nestedBlocks) {
+          if (nested) rendered.push(nested);
+        }
+        return rendered.join("\\n");
+      }
+
+      function markdownTableFromElement(table) {
+        const rows = Array.from(table.querySelectorAll("tr")).map((row) =>
+          Array.from(row.children || [])
+            .filter((cell) => /^(th|td)$/i.test(cell.tagName))
+            .map((cell) => markdownTableCell(inlineMarkdownFromChildren(cell)))
+        ).filter((row) => row.length > 0);
+        if (rows.length === 0) return "";
+        const columnCount = Math.max(...rows.map((row) => row.length));
+        const normalized = rows.map((row) => {
+          const cells = row.slice();
+          while (cells.length < columnCount) cells.push("");
+          return cells;
+        });
+        const header = normalized[0];
+        const divider = header.map(() => "---");
+        const body = normalized.slice(1);
+        return [header, divider].concat(body).map((row) => "| " + row.join(" | ") + " |").join("\\n");
+      }
+
+      function markdownTableCell(value) {
+        return normalizeMarkdown(String(value || "").replace(/\\|/g, "/")).replace(/\\n/g, " ");
+      }
+
+      function inlineMarkdownFromChildren(element) {
+        return Array.from(element.childNodes || []).map(inlineMarkdownFromNode).join("");
+      }
+
+      function inlineMarkdownFromNode(node) {
+        if (!node) return "";
+        if (node.nodeType === 3) {
+          return String(node.textContent || "").replace(/\\u00a0/g, " ");
+        }
+        if (node.nodeType !== 1) return "";
+        const element = node;
+        if (element.classList && element.classList.contains("markdown-empty")) return "";
+        if (element.classList && element.classList.contains("markdown-task-checkbox")) return "";
+        const tag = element.tagName.toLowerCase();
+        if (tag === "br") return "\\n";
+        if (tag === "strong" || tag === "b") {
+          return wrapInlineMarkdown("**", inlineMarkdownFromChildren(element));
+        }
+        if (tag === "em" || tag === "i") {
+          return wrapInlineMarkdown("_", inlineMarkdownFromChildren(element));
+        }
+        if (tag === "code" && (!element.parentElement || element.parentElement.tagName.toLowerCase() !== "pre")) {
+          const tick = String.fromCharCode(96);
+          return tick + String(element.textContent || "") + tick;
+        }
+        if (tag === "a") {
+          const label = normalizeMarkdown(inlineMarkdownFromChildren(element));
+          const href = safeMarkdownUrl(element.getAttribute("href") || "");
+          return href && label ? "[" + label + "](" + href + ")" : label;
+        }
+        return inlineMarkdownFromChildren(element);
+      }
+
+      function wrapInlineMarkdown(wrapper, text) {
+        const normalized = normalizeMarkdown(text);
+        return normalized ? wrapper + normalized + wrapper : "";
+      }
+
+      function normalizeMarkdown(markdown) {
+        return String(markdown || "")
+          .replace(/\\u00a0/g, " ")
+          .split("\\n")
+          .map((line) => line.replace(/[ \\t]+$/g, ""))
+          .join("\\n")
+          .replace(/\\n{3,}/g, "\\n\\n")
+          .trim();
       }
 
       function insertMarkdownAtCursor(text, selectOffset = null, selectLength = 0) {
@@ -2451,14 +3095,22 @@ export function renderHomePage(): string {
         editor.dispatchEvent(new Event("input", { bubbles: true }));
       }
 
-      function refreshMarkdownPreview(nodeId, markdown) {
-        const previewHtml = markdownToHtml(markdown);
+      function refreshMarkdownPreview(nodeId, markdown, options = {}) {
+        const skipPreviewElement = options.skipPreviewElement || null;
+        const previewHtml = markdownPreviewHtml(markdown, true);
         const drawerPreview = document.querySelector("#markdownLivePreview");
-        if (drawerPreview) drawerPreview.innerHTML = previewHtml;
-        const nodePreview = els.tree.querySelector(
+        if (drawerPreview && drawerPreview !== skipPreviewElement) {
+          drawerPreview.innerHTML = previewHtml;
+          setEditableMarkdownEmptyState(drawerPreview);
+        }
+        const nodePreviews = els.tree.querySelectorAll(
           '.node[data-node-id="' + cssEscape(nodeId) + '"] .node-markdown-preview-body'
         );
-        if (nodePreview) nodePreview.innerHTML = previewHtml;
+        for (const nodePreview of nodePreviews) {
+          if (nodePreview === skipPreviewElement) continue;
+          nodePreview.innerHTML = previewHtml;
+          setEditableMarkdownEmptyState(nodePreview);
+        }
       }
 
       function markdownToHtml(markdown) {
@@ -2496,10 +3148,25 @@ export function renderHomePage(): string {
           return renderMarkdownTable(lines);
         }
 
-        const heading = trimmed.match(/^(#{1,3})\\s+(.+)$/);
+        const heading = trimmed.match(/^(#{1,5})\\s+(.+)$/);
         if (heading) {
           const level = heading[1].length;
           return "<h" + level + ">" + renderInlineMarkdown(heading[2]) + "</h" + level + ">";
+        }
+
+        if (lines.every((line) => /^[-*]\\s+\\[[ xX]\\]\\s+/.test(line.trim()))) {
+          return (
+            '<ul class="markdown-task-list">' +
+            lines.map((line) => {
+              const checked = /^[-*]\\s+\\[[xX]\\]/.test(line.trim());
+              const text = line.trim().replace(/^[-*]\\s+\\[[ xX]\\]\\s+/, "");
+              return '<li data-md-task-item="true" data-md-task-checked="' + (checked ? "true" : "false") + '">' +
+                '<span class="markdown-task-checkbox" aria-hidden="true"></span>' +
+                renderInlineMarkdown(text) +
+              "</li>";
+            }).join("") +
+            "</ul>"
+          );
         }
 
         if (lines.every((line) => /^[-*]\\s+/.test(line.trim()))) {
@@ -2513,6 +3180,11 @@ export function renderHomePage(): string {
         if (lines.every((line) => /^>\\s?/.test(line.trim()))) {
           const quote = lines.map((line) => line.trim().replace(/^>\\s?/, "")).join("<br />");
           return "<blockquote>" + renderInlineMarkdown(quote) + "</blockquote>";
+        }
+
+        if (lines.every((line) => /^!!\\s?/.test(line.trim()))) {
+          const highlight = lines.map((line) => line.trim().replace(/^!!\\s?/, "")).join("<br />");
+          return '<div class="markdown-highlight-block" data-md-block="highlight">' + renderInlineMarkdown(highlight) + "</div>";
         }
 
         return "<p>" + lines.map(renderInlineMarkdown).join("<br />") + "</p>";
@@ -2967,6 +3639,18 @@ export function renderHomePage(): string {
         if (!active || active.dataset.nodeId === undefined || active.dataset.field === undefined) {
           return null;
         }
+        if (active.dataset.mdPreviewEditable === "true") {
+          const selection = captureContentEditableSelection(active);
+          return {
+            nodeId: active.dataset.nodeId,
+            field: active.dataset.field,
+            editablePreview: true,
+            previewScope: active.dataset.mdPreviewScope || "",
+            elementId: active.id || "",
+            selectionStart: selection.start,
+            selectionEnd: selection.end
+          };
+        }
         return {
           nodeId: active.dataset.nodeId,
           field: active.dataset.field,
@@ -2979,15 +3663,113 @@ export function renderHomePage(): string {
         if (!focus) return;
         const selector =
           '[data-node-id="' + cssEscape(focus.nodeId) + '"][data-field="' + cssEscape(focus.field) + '"]';
-        const next = els.tree.querySelector(selector) || document.querySelector(selector);
-        if (!next) return;
-        next.focus({ preventScroll: true });
-        if (typeof next.setSelectionRange === "function") {
-          const length = next.value.length;
+        if (focus.editablePreview) {
+          const nextPreview = findEditablePreviewForFocus(focus, selector);
+          if (!nextPreview) return;
+          nextPreview.focus({ preventScroll: true });
+          restoreContentEditableSelection(
+            nextPreview,
+            focus.selectionStart ?? 0,
+            focus.selectionEnd ?? focus.selectionStart ?? 0
+          );
+          updateMarkdownBlockMenuForSelection(nextPreview);
+          return;
+        }
+        const next =
+          focus.field === "content"
+            ? document.querySelector("#markdownContentEditor" + selector)
+            : null;
+        const fallback = next || els.tree.querySelector(selector) || document.querySelector(selector);
+        if (!fallback) return;
+        fallback.focus({ preventScroll: true });
+        if (typeof fallback.setSelectionRange === "function") {
+          const length = fallback.value.length;
           const start = Math.min(focus.selectionStart ?? length, length);
           const end = Math.min(focus.selectionEnd ?? start, length);
-          next.setSelectionRange(start, end);
+          fallback.setSelectionRange(start, end);
         }
+      }
+
+      function findEditablePreviewForFocus(focus, selector) {
+        if (focus.elementId) {
+          const exact = document.querySelector("#" + cssEscape(focus.elementId));
+          if (exact && exact.dataset.mdPreviewEditable === "true") return exact;
+        }
+        if (focus.previewScope) {
+          const scoped = document.querySelector(
+            selector + '[data-md-preview-editable="true"][data-md-preview-scope="' + cssEscape(focus.previewScope) + '"]'
+          );
+          if (scoped) return scoped;
+        }
+        return document.querySelector(selector + '[data-md-preview-editable="true"]');
+      }
+
+      function captureContentEditableSelection(root) {
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0) {
+          const length = String(root.textContent || "").length;
+          return { start: length, end: length };
+        }
+        const range = selection.getRangeAt(0);
+        if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) {
+          const length = String(root.textContent || "").length;
+          return { start: length, end: length };
+        }
+        const startRange = document.createRange();
+        startRange.selectNodeContents(root);
+        startRange.setEnd(range.startContainer, range.startOffset);
+        const endRange = document.createRange();
+        endRange.selectNodeContents(root);
+        endRange.setEnd(range.endContainer, range.endOffset);
+        return {
+          start: startRange.toString().length,
+          end: endRange.toString().length
+        };
+      }
+
+      function restoreContentEditableSelection(root, start, end) {
+        const selection = window.getSelection();
+        if (!selection) return;
+        const range = document.createRange();
+        const textLength = String(root.textContent || "").length;
+        const targetStart = Math.max(0, Math.min(start || 0, textLength));
+        const targetEnd = Math.max(targetStart, Math.min(end || targetStart, textLength));
+        const positions = findTextPositions(root, targetStart, targetEnd);
+        if (!positions.startNode || !positions.endNode) {
+          range.selectNodeContents(root);
+          range.collapse(false);
+        } else {
+          range.setStart(positions.startNode, positions.startOffset);
+          range.setEnd(positions.endNode, positions.endOffset);
+        }
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+
+      function findTextPositions(root, targetStart, targetEnd) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        let current = 0;
+        let startNode = null;
+        let startOffset = 0;
+        let endNode = null;
+        let endOffset = 0;
+        let node = walker.nextNode();
+        while (node) {
+          const length = node.textContent.length;
+          const next = current + length;
+          if (!startNode && targetStart <= next) {
+            startNode = node;
+            startOffset = Math.max(0, Math.min(targetStart - current, length));
+          }
+          if (!endNode && targetEnd <= next) {
+            endNode = node;
+            endOffset = Math.max(0, Math.min(targetEnd - current, length));
+            break;
+          }
+          current = next;
+          node = walker.nextNode();
+        }
+        return { startNode, startOffset, endNode, endOffset };
       }
 
       function cssEscape(value) {
@@ -3216,18 +3998,24 @@ export function renderHomePage(): string {
       }
 
       async function addChildNode(parentNode, depth) {
-        const createTask = depth >= 1;
+        const result = await showAddNodeDialog(parentNode);
+        if (!result) return; // user cancelled
+
+        const nodeType = result.nodeType || (depth >= 1 ? "task" : "doc");
+        const isTask = nodeType === "task";
+
         await submitOperation({
           type: "addNode",
           parentId: parentNode.id,
-          nodeType: createTask ? "task" : "doc",
-          title: createTask ? "新任务" : "新项目模块",
+          nodeType: isTask ? "task" : "doc",
+          title: result.title,
           content: "",
-          attrs: createTask ? {
+          attrs: isTask ? {
             priority: "C",
             budget: 0,
             taskStatus: "todo"
-          } : undefined
+          } : undefined,
+          aclPatch: aclPatchFromAudience(result.audience)
         });
       }
 
@@ -3293,9 +4081,8 @@ export function renderHomePage(): string {
       }
 
       async function deleteUserAccount(user) {
-        if (!window.confirm("确认删除账号 " + (user.username || user.id) + "？")) {
-          return;
-        }
+        const confirmed = await showConfirmDialog("删除账号", "确认删除账号「" + (user.name || user.username || user.id) + "」？此操作不可撤销。");
+        if (!confirmed) return;
         setUserManagementStatus("正在删除账号...");
         const body = await requestJson("/api/users/" + encodeURIComponent(user.id), {
           method: "DELETE"
@@ -3309,7 +4096,9 @@ export function renderHomePage(): string {
       }
 
       async function deleteTreeNode(nodeId) {
-        if (!window.confirm("确定要删除该节点吗？")) return;
+        const nodeTitle = resolveNodeTitle(nodeId);
+        const confirmed = await showConfirmDialog("删除节点", "确定要删除节点「" + nodeTitle + "」吗？");
+        if (!confirmed) return;
         const impact = await requestJson("/api/delete-impact?nodeId=" + encodeURIComponent(nodeId));
         if (!impact.blocksSilentDelete) {
           await submitOperation({ type: "deleteNode", nodeId });
@@ -3414,6 +4203,111 @@ export function renderHomePage(): string {
         els.noticeDialog.setAttribute("aria-hidden", "true");
         resolve();
       }
+
+      let confirmDialogResolver = null;
+
+      function showConfirmDialog(title, message) {
+        if (confirmDialogResolver) {
+          confirmDialogResolver(false);
+          confirmDialogResolver = null;
+        }
+        return new Promise((resolve) => {
+          confirmDialogResolver = resolve;
+          els.confirmDialogTitle.textContent = title;
+          els.confirmDialogCopy.textContent = message;
+          els.confirmDialog.classList.remove("hidden");
+          els.confirmDialog.setAttribute("aria-hidden", "false");
+        });
+      }
+
+      function closeConfirmDialog(result) {
+        if (!confirmDialogResolver) return;
+        const resolve = confirmDialogResolver;
+        confirmDialogResolver = null;
+        els.confirmDialog.classList.add("hidden");
+        els.confirmDialog.setAttribute("aria-hidden", "true");
+        resolve(result);
+      }
+
+      els.confirmDialogCancel.addEventListener("click", () => closeConfirmDialog(false));
+      els.confirmDialogOk.addEventListener("click", () => closeConfirmDialog(true));
+      els.confirmDialog.addEventListener("click", (event) => {
+        if (event.target === els.confirmDialog) closeConfirmDialog(false);
+      });
+
+      // ── Add Node Dialog ──
+
+      function buildAddNodeAclArea() {
+        els.addNodeAclArea.innerHTML = "";
+        const label = document.createElement("label");
+        label.style.cssText = "display:grid;gap:5px;font-size:12px;color:var(--muted);font-weight:700;";
+        label.textContent = "可见范围";
+        const select = createCustomSelect(
+          [
+            { value: "all", label: "所有人可见" },
+            { value: "admin-manager", label: "管理员和研发经理" },
+            { value: "dev-team", label: "管理员和研发团队" },
+            { value: "admin", label: "仅管理员" }
+          ],
+          "dev-team",
+          () => {}
+        );
+        select.element.dataset.field = "addNodeVisibility";
+        label.appendChild(select.element);
+        els.addNodeAclArea.appendChild(label);
+      }
+
+      function showAddNodeDialog(parentNode) {
+        return new Promise((resolve) => {
+          els.addNodeParentInfo.textContent = "父节点：" + quotedNodeTitle(parentNode.title || parentNode.id) + " — 请设置新节点的属性，或直接点击确定使用默认值。";
+          els.addNodeTitle.value = parentNode.type === "task" ? "新任务" : "新项目模块";
+          els.addNodeType.value = parentNode.type === "task" ? "task" : "doc";
+          buildAddNodeAclArea();
+          els.addNodeDialog.classList.remove("hidden");
+          els.addNodeDialog.setAttribute("aria-hidden", "false");
+          els.addNodeTitle.focus();
+          els.addNodeTitle.select();
+
+          function onOk() {
+            const title = els.addNodeTitle.value.trim() || (els.addNodeType.value === "task" ? "新任务" : "新项目模块");
+            const nodeType = els.addNodeType.value;
+            const visibilityEl = document.querySelector("[data-field='addNodeVisibility'] .multi-select");
+            let audience = "dev-team";
+            // Read selected value from the custom select summary text
+            const summary = visibilityEl ? visibilityEl.querySelector("summary") : null;
+            if (summary) {
+              const text = summary.textContent || "";
+              if (text.includes("仅管理员") && !text.includes("研发经理") && !text.includes("研发团队")) audience = "admin";
+              else if (text.includes("研发经理") && text.includes("研发团队")) audience = "dev-team";
+              else if (text.includes("研发经理") && !text.includes("研发团队")) audience = "admin-manager";
+              else if (text.includes("所有人")) audience = "all";
+            }
+            cleanup();
+            resolve({ title, nodeType, audience });
+          }
+
+          function onCancel() {
+            cleanup();
+            resolve(null);
+          }
+
+          function cleanup() {
+            els.addNodeDialog.classList.add("hidden");
+            els.addNodeDialog.setAttribute("aria-hidden", "true");
+            els.addNodeDialogOk.removeEventListener("click", onOk);
+            els.addNodeDialogCancel.removeEventListener("click", onCancel);
+          }
+
+          els.addNodeDialogOk.addEventListener("click", onOk);
+          els.addNodeDialogCancel.addEventListener("click", onCancel);
+        });
+      }
+
+      els.addNodeDialog.addEventListener("click", (event) => {
+        if (event.target === els.addNodeDialog) {
+          els.addNodeDialogOk.click();
+        }
+      });
 
       function formatDeleteImpactCopy(impact) {
         return (
@@ -3725,6 +4619,60 @@ export function renderHomePage(): string {
         if (event.target === els.noticeDialog) {
           closeNoticeDialog();
         }
+      });
+      els.markdownBlockMenuTrigger.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+      });
+      els.markdownBlockMenuTrigger.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (els.markdownBlockMenuPanel.classList.contains("hidden")) {
+          openMarkdownBlockMenuPanel();
+        } else {
+          closeMarkdownBlockMenuPanel();
+        }
+      });
+      els.markdownBlockMenuPanel.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+      });
+      els.markdownBlockMenuPanel.addEventListener("click", (event) => {
+        const button = event.target && event.target.closest
+          ? event.target.closest("[data-md-block-format]")
+          : null;
+        if (!button) return;
+        event.preventDefault();
+        event.stopPropagation();
+        applyMarkdownBlockFormat(button.dataset.mdBlockFormat);
+      });
+      document.addEventListener("selectionchange", () => {
+        const preview = editablePreviewFromSelection();
+        if (preview) {
+          updateMarkdownBlockMenuForSelection(preview);
+          return;
+        }
+        if (
+          !els.markdownBlockMenuPanel.contains(document.activeElement) &&
+          !(document.activeElement && document.activeElement === els.markdownBlockMenuTrigger)
+        ) {
+          hideMarkdownBlockMenu();
+        }
+      });
+      document.addEventListener("click", (event) => {
+        if (
+          event.target &&
+          event.target.closest &&
+          (event.target.closest("#markdownBlockMenuPanel") || event.target.closest("#markdownBlockMenuTrigger"))
+        ) {
+          return;
+        }
+        if (!editablePreviewFromSelection()) hideMarkdownBlockMenu();
+        else closeMarkdownBlockMenuPanel();
+      });
+      window.addEventListener("scroll", () => {
+        if (activeMarkdownBlockMenuTarget) updateMarkdownBlockMenuForSelection(activeMarkdownBlockMenuTarget.preview);
+      }, true);
+      window.addEventListener("resize", () => {
+        if (activeMarkdownBlockMenuTarget) updateMarkdownBlockMenuForSelection(activeMarkdownBlockMenuTarget.preview);
       });
 
       els.showRegister.addEventListener("click", () => {
