@@ -316,7 +316,32 @@ export function renderHomePage(): string {
     .section-head.compact { margin-bottom: 24px; }
     .section-head h3 { margin: 0 0 6px; font-size: 20px; letter-spacing: -.03em; }
     .section-head p { margin: 0; color: var(--muted); line-height: 1.6; font-size: 13px; }
-    
+
+    /* ── Log limit selector ── */
+    .log-limit-select { position: relative; }
+    .log-limit-select summary {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 4px 10px; border: 1px solid var(--line); border-radius: 10px;
+      background: var(--surface-solid); color: var(--muted); font-size: 12px;
+      cursor: pointer; list-style: none; white-space: nowrap;
+    }
+    .log-limit-select summary::-webkit-details-marker { display: none; }
+    .log-limit-select summary:hover { border-color: var(--muted); color: var(--text); }
+    .log-limit-select[open] summary { border-color: var(--brand); color: var(--brand); }
+    .log-limit-menu {
+      position: absolute; top: calc(100% + 4px); right: 0; z-index: 100;
+      min-width: 130px; padding: 4px; border-radius: var(--radius-sm);
+      background: var(--surface-solid); border: 1px solid var(--line);
+      box-shadow: var(--shadow-soft); display: grid; gap: 1px;
+    }
+    .log-limit-option {
+      width: 100%; padding: 7px 10px; border: 0; border-radius: 8px;
+      background: transparent; color: var(--text); font-size: 12px; font-weight: 500;
+      text-align: left; cursor: pointer; transition: background .1s ease;
+    }
+    .log-limit-option:hover { background: var(--surface-2); color: var(--brand); }
+    .log-limit-option.active { color: var(--brand); font-weight: 700; }
+
     .employee-log-section { display: grid; gap: 10px; margin-top: 16px; }
     .employee-log-section h4 { margin: 0; font-size: 13px; color: var(--muted); }
     .employee-log-list { display: grid; gap: 8px; }
@@ -892,6 +917,10 @@ export function renderHomePage(): string {
                 <h3>操作日志</h3>
                 <p>记录本地视图操作、同步状态和后端合并结果。</p>
               </div>
+              <details class="log-limit-select" id="logLimitSelect">
+                <summary id="logLimitSummary">显示 20 条</summary>
+                <div class="log-limit-menu" id="logLimitMenu"></div>
+              </details>
             </div>
             
             <div class="employee-log-section">
@@ -1127,6 +1156,9 @@ export function renderHomePage(): string {
         markdownEditorDrawer: document.querySelector("#markdownEditorDrawer"),
         localLogList: document.querySelector("#localLogList"),
         remoteLogList: document.querySelector("#remoteLogList"),
+        logLimitSelect: document.querySelector("#logLimitSelect"),
+        logLimitSummary: document.querySelector("#logLimitSummary"),
+        logLimitMenu: document.querySelector("#logLimitMenu"),
         undoBtn: document.querySelector("#undoBtn"),
         redoBtn: document.querySelector("#redoBtn"),
         headerAvatar: document.querySelector("#headerAvatar"),
@@ -1163,7 +1195,32 @@ export function renderHomePage(): string {
       const RECONNECT_INTERVAL_MS = 5_000;
       const MAX_REJECTED_ITEMS = 100;
       const MAX_QUEUE_SIZE = 1000;
-      const operationLogLimit = 20;
+      const LOG_LIMIT_OPTIONS = [
+        { value: 0, label: "不显示" },
+        { value: 5, label: "显示 5 条" },
+        { value: 10, label: "显示 10 条" },
+        { value: 20, label: "显示 20 条" },
+        { value: Infinity, label: "完全显示" }
+      ];
+
+      function loadLogLimit() {
+        const raw = window.localStorage.getItem("crdt-log-limit");
+        if (raw) {
+          const parsed = Number(raw);
+          if (parsed === 0) return 0;
+          if (parsed === 5) return 5;
+          if (parsed === 10) return 10;
+          if (parsed === 20) return 20;
+          if (!Number.isFinite(parsed) || parsed < 0) return Infinity;
+        }
+        return 20; // default
+      }
+
+      function saveLogLimit(limit) {
+        window.localStorage.setItem("crdt-log-limit", String(limit));
+      }
+
+      let operationLogLimit = loadLogLimit();
       const operationLogKeys = new Set();
       const operationLogClassNames = {
         local: "employee-log-item local",
@@ -4219,6 +4276,52 @@ export function renderHomePage(): string {
       els.headerPill.addEventListener("click", (event) => {
         event.stopPropagation();
         els.userDropdown.classList.toggle("show");
+      });
+
+      // ── Log limit selector ──
+
+      function updateLogLimitSummary() {
+        if (operationLogLimit === 0) {
+          els.logLimitSummary.textContent = "不显示";
+        } else if (operationLogLimit === Infinity) {
+          els.logLimitSummary.textContent = "完全显示";
+        } else {
+          els.logLimitSummary.textContent = "显示 " + operationLogLimit + " 条";
+        }
+      }
+
+      function buildLogLimitMenu() {
+        updateLogLimitSummary();
+        els.logLimitMenu.innerHTML = "";
+        for (const opt of LOG_LIMIT_OPTIONS) {
+          const isActive = opt.value === operationLogLimit;
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "log-limit-option" + (isActive ? " active" : "");
+          btn.textContent = opt.label;
+          btn.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            operationLogLimit = opt.value;
+            saveLogLimit(operationLogLimit);
+            updateLogLimitSummary();
+            buildLogLimitMenu();
+            els.logLimitSelect.open = false;
+            renderOperationLogs();
+          });
+          els.logLimitMenu.appendChild(btn);
+        }
+      }
+
+      buildLogLimitMenu();
+
+      // Close log limit dropdown when clicking outside
+      document.addEventListener("click", (event) => {
+        if (event.target && event.target.closest) {
+          if (!event.target.closest(".log-limit-select") && els.logLimitSelect.open) {
+            els.logLimitSelect.open = false;
+          }
+        }
       });
 
       window.localStorage.removeItem("crdt-editor-session-token-v1");
