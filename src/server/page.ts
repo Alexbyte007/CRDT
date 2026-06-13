@@ -118,6 +118,130 @@ export function renderHomePage(): string {
       color: white; font-weight: 800; background: linear-gradient(135deg, var(--brand), var(--brand-3));
       box-shadow: inset 0 0 0 2px rgba(255,255,255,.22); flex: 0 0 auto;
     }
+    .avatar-lg {
+      width: 64px; height: 64px; font-size: 24px;
+    }
+
+    /* ── User dropdown ── */
+    .user-pill { position: relative; cursor: pointer; }
+    .user-dropdown {
+      position: absolute; top: calc(100% + 6px); right: 0; z-index: 100;
+      min-width: 160px; padding: 6px; border-radius: var(--radius-md);
+      background: var(--surface-solid); border: 1px solid var(--line);
+      box-shadow: var(--shadow-soft);
+      opacity: 0; visibility: hidden; transform: translateY(-6px);
+      transition: opacity .16s ease, transform .16s ease, visibility .16s;
+      pointer-events: none;
+    }
+    .user-pill:hover .user-dropdown,
+    .user-dropdown.show {
+      opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto;
+    }
+    .user-dropdown-item {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%; padding: 9px 12px; border: 0; border-radius: var(--radius-sm);
+      background: transparent; color: var(--text); font-size: 13px; font-weight: 500;
+      cursor: pointer; text-align: left; transition: background .12s ease;
+    }
+    .user-dropdown-item:hover { background: var(--surface-2); color: var(--brand); }
+    .user-dropdown-sep { height: 1px; margin: 4px 8px; background: var(--line); }
+
+    /* ── Settings modal ── */
+    .settings-card {
+      width: min(620px, 100%); height: 460px; max-height: 80vh; overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    .settings-close {
+      position: absolute; top: 16px; right: 16px; z-index: 1;
+      width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line);
+      background: var(--surface-solid); color: var(--muted); font-size: 14px;
+      cursor: pointer; display: grid; place-items: center;
+      transition: color .14s ease, border-color .14s ease;
+    }
+    .settings-close:hover { color: var(--text); border-color: var(--muted); }
+    .settings-layout { display: flex; flex: 1; overflow: hidden; }
+    .settings-sidebar {
+      width: 170px; flex: 0 0 170px; border-right: 1px solid var(--line);
+      padding: 8px; display: flex; flex-direction: column; gap: 4px;
+      background: var(--surface-2); border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+    }
+    .settings-tab {
+      width: 100%; padding: 10px 12px; border: 0; border-radius: var(--radius-sm);
+      background: transparent; color: var(--muted); font-size: 13px; font-weight: 600;
+      text-align: left; cursor: pointer; transition: all .14s ease;
+    }
+    .settings-tab:hover { background: var(--surface-solid); color: var(--text); }
+    .settings-tab.active {
+      background: var(--surface-solid); color: var(--brand);
+      box-shadow: inset 3px 0 0 var(--brand);
+    }
+    .settings-content {
+      flex: 1; padding: 24px 28px; overflow-y: auto; display: grid;
+      align-content: start; gap: 20px;
+    }
+    .settings-panel { display: grid; gap: 20px; }
+    .settings-panel.hidden { display: none; }
+    .settings-panel h3 {
+      margin: 0 0 -8px; font-size: 17px; font-weight: 750; color: var(--text);
+    }
+    .settings-section {
+      display: grid; gap: 6px;
+    }
+    .settings-section label {
+      display: grid; gap: 5px; font-size: 12px; color: var(--muted); font-weight: 700;
+    }
+    .settings-section label .hint { font-weight: 400; color: var(--muted); }
+    .settings-row {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .settings-row input { flex: 1; }
+    .settings-row button { width: auto; flex: 0 0 auto; }
+    .settings-section input {
+      width: 100%; min-height: 38px; border: 1px solid var(--line); border-radius: 11px;
+      padding: 8px 12px; background: var(--surface-solid); color: var(--text);
+      font-size: 13px; outline: none;
+      transition: border-color .14s ease, box-shadow .14s ease;
+    }
+    .settings-section input:focus {
+      border-color: color-mix(in srgb, var(--brand) 70%, white);
+      box-shadow: 0 0 0 3px rgba(79,70,229,.10);
+    }
+    .settings-section input:disabled {
+      opacity: 0.55; background: var(--surface-2); color: var(--muted);
+      cursor: not-allowed;
+    }
+
+    /* ── Toggle switch ── */
+    .toggle-switch {
+      position: relative; display: inline-block; width: 46px; height: 26px; flex: 0 0 auto;
+    }
+    .toggle-switch input { display: none; }
+    .toggle-slider {
+      position: absolute; inset: 0; border-radius: 26px; background: var(--line);
+      cursor: pointer; transition: background .18s ease;
+    }
+    .toggle-slider::after {
+      content: ""; position: absolute; top: 3px; left: 3px;
+      width: 20px; height: 20px; border-radius: 50%;
+      background: var(--surface-solid); box-shadow: 0 2px 6px rgba(0,0,0,.12);
+      transition: transform .18s ease;
+    }
+    .toggle-switch input:checked + .toggle-slider {
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+    }
+    .toggle-switch input:checked + .toggle-slider::after {
+      transform: translateX(20px);
+    }
+
+    /* ── Avatar editor ── */
+    .avatar-editor {
+      display: flex; align-items: center; gap: 14px;
+    }
+    .avatar-editor .avatar {
+      cursor: pointer; transition: transform .14s ease;
+    }
+    .avatar-editor .avatar:hover { transform: scale(1.08); }
+    .avatar-editor .hint { color: var(--muted); font-size: 12px; }
 
     .auth-page {
       min-height: calc(100vh - 74px); display: grid; place-items: center; padding: 32px;
@@ -398,6 +522,19 @@ export function renderHomePage(): string {
       width: 100%; min-height: 34px; border: 1px solid var(--line); border-radius: 11px;
       padding: 7px 9px; background: var(--surface-solid); color: var(--text); font-size: 13px;
     }
+    .task-attrs-panel .multi-select summary,
+    .module-filter-panel .multi-select summary {
+      min-height: 34px; border-radius: 11px; padding: 7px 9px; font-size: 13px;
+      background-position: right 9px center; padding-right: 30px;
+    }
+    .task-attrs-panel .multi-select-menu,
+    .module-filter-panel .multi-select-menu {
+      border-radius: 11px; font-size: 13px;
+    }
+    .task-attrs-panel .multi-select-option,
+    .module-filter-panel .multi-select-option {
+      padding: 6px 8px; font-size: 13px;
+    }
     .module-stat {
       display: grid; gap: 2px; padding: 8px 10px; border-radius: 12px;
       background: var(--surface-2); border: 1px solid var(--line);
@@ -638,8 +775,13 @@ export function renderHomePage(): string {
         <button class="btn small app-mode-only" id="redoBtn" title="重做 (Ctrl+Y)" disabled>↷ 重做</button>
         <button class="icon-btn" id="themeToggle" title="切换主题" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; this.textContent = document.documentElement.dataset.theme === 'dark' ? '☀' : '☾';">☾</button>
         <div class="user-pill app-mode-only" id="headerUserPill">
-          <span class="avatar">U</span>
+          <span class="avatar" id="headerAvatar">U</span>
           <span class="small-text strong" id="headerSession">未登录</span>
+          <div class="user-dropdown" id="userDropdown">
+            <button class="user-dropdown-item" id="settingsBtn">⚙ 账号管理</button>
+            <div class="user-dropdown-sep"></div>
+            <button class="user-dropdown-item" id="switchAccountBtn">↪ 切换账号</button>
+          </div>
         </div>
         <button class="btn small app-mode-only" id="logout">退出</button>
       </div>
@@ -802,6 +944,94 @@ export function renderHomePage(): string {
       </div>
     </div>
 
+    <div id="settingsDialog" class="modal hidden" aria-hidden="true">
+      <div class="modal-card settings-card" role="dialog" aria-modal="true">
+        <button class="settings-close" id="settingsClose" type="button" title="关闭">✕</button>
+        <div class="settings-layout">
+          <div class="settings-sidebar">
+            <button class="settings-tab active" data-tab="general">通用设置</button>
+            <button class="settings-tab" data-tab="account">账号与安全</button>
+          </div>
+          <div class="settings-content">
+            <div class="settings-panel" id="settingsPanelGeneral">
+              <h3>外观</h3>
+              <div class="settings-section">
+                <div class="settings-row">
+                  <label style="flex:1;"><span>深色模式</span><span class="hint">切换浅色 / 深色主题</span></label>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="darkModeToggle">
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+              </div>
+              <h3>偏好</h3>
+              <div class="settings-section">
+                <label>
+                  <span>界面语言</span>
+                  <select disabled style="width:100%;min-height:38px;border:1px solid var(--line);border-radius:11px;padding:8px 12px;background:var(--surface-2);color:var(--muted);font-size:13px;cursor:not-allowed;opacity:0.55;">
+                    <option selected>简体中文</option>
+                  </select>
+                  <span class="hint" style="font-weight:400;">更多语言将在后续版本支持</span>
+                </label>
+              </div>
+              <h3>数据</h3>
+              <div class="settings-section">
+                <div class="settings-row">
+                  <label style="flex:1;"><span>清除本地缓存</span><span class="hint">移除离线操作队列和草稿数据</span></label>
+                  <button class="btn small secondary" id="clearCacheBtn">清除缓存</button>
+                </div>
+              </div>
+            </div>
+            <div class="settings-panel hidden" id="settingsPanelAccount">
+              <h3>头像</h3>
+              <div class="settings-section">
+                <div class="avatar-editor">
+                  <span class="avatar avatar-lg" id="settingsAvatar" title="点击上传头像图片">U</span>
+                  <input type="file" accept="image/*" id="avatarFileInput" style="display:none;">
+                  <div>
+                    <button class="btn small secondary" id="uploadAvatarBtn">上传图片</button>
+                    <button class="btn small" id="removeAvatarBtn" style="margin-left:6px;">移除自定义头像</button>
+                    <div class="hint" style="margin-top:4px;">支持 JPG / PNG，图片将被缩放至 128×128</div>
+                  </div>
+                </div>
+              </div>
+              <h3>个人信息</h3>
+              <div class="settings-section">
+                <label>
+                  <span>用户名</span>
+                  <input id="settingsUsername" type="text" disabled>
+                </label>
+                <label>
+                  <span>昵称</span>
+                  <div class="settings-row">
+                    <input id="settingsName" type="text" placeholder="输入新的昵称">
+                    <button class="btn small primary" id="saveNameBtn">保存</button>
+                  </div>
+                </label>
+              </div>
+              <h3>修改密码</h3>
+              <div class="settings-section">
+                <label>
+                  <span>当前密码</span>
+                  <input id="settingsCurrentPassword" type="password" placeholder="输入当前密码">
+                </label>
+                <label>
+                  <span>新密码</span>
+                  <input id="settingsNewPassword" type="password" placeholder="输入新密码">
+                </label>
+                <label>
+                  <span>确认新密码</span>
+                  <input id="settingsConfirmPassword" type="password" placeholder="再次输入新密码">
+                </label>
+                <button class="btn primary" id="changePasswordBtn" style="width:auto;justify-self:start;">修改密码</button>
+              </div>
+              <span id="settingsProfileStatus" style="font-size:12px;color:var(--muted);margin-top:4px;"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="markdownDrawerBackdrop" class="markdown-drawer-backdrop hidden" aria-hidden="true">
       <aside id="markdownEditorDrawer" class="markdown-drawer" role="dialog" aria-modal="true" aria-labelledby="markdownDrawerTitle"></aside>
     </div>
@@ -898,7 +1128,30 @@ export function renderHomePage(): string {
         localLogList: document.querySelector("#localLogList"),
         remoteLogList: document.querySelector("#remoteLogList"),
         undoBtn: document.querySelector("#undoBtn"),
-        redoBtn: document.querySelector("#redoBtn")
+        redoBtn: document.querySelector("#redoBtn"),
+        headerAvatar: document.querySelector("#headerAvatar"),
+        headerPill: document.querySelector("#headerUserPill"),
+        userDropdown: document.querySelector("#userDropdown"),
+        settingsBtn: document.querySelector("#settingsBtn"),
+        switchAccountBtn: document.querySelector("#switchAccountBtn"),
+        settingsDialog: document.querySelector("#settingsDialog"),
+        settingsClose: document.querySelector("#settingsClose"),
+        settingsPanelGeneral: document.querySelector("#settingsPanelGeneral"),
+        settingsPanelAccount: document.querySelector("#settingsPanelAccount"),
+        darkModeToggle: document.querySelector("#darkModeToggle"),
+        settingsAvatar: document.querySelector("#settingsAvatar"),
+        settingsUsername: document.querySelector("#settingsUsername"),
+        settingsName: document.querySelector("#settingsName"),
+        saveNameBtn: document.querySelector("#saveNameBtn"),
+        settingsCurrentPassword: document.querySelector("#settingsCurrentPassword"),
+        settingsNewPassword: document.querySelector("#settingsNewPassword"),
+        settingsConfirmPassword: document.querySelector("#settingsConfirmPassword"),
+        changePasswordBtn: document.querySelector("#changePasswordBtn"),
+        settingsProfileStatus: document.querySelector("#settingsProfileStatus"),
+        clearCacheBtn: document.querySelector("#clearCacheBtn"),
+        avatarFileInput: document.querySelector("#avatarFileInput"),
+        uploadAvatarBtn: document.querySelector("#uploadAvatarBtn"),
+        removeAvatarBtn: document.querySelector("#removeAvatarBtn")
       };
 
       const offlineStorageKey = "crdt-editor-offline-queue-v1";
@@ -1373,9 +1626,11 @@ export function renderHomePage(): string {
         if (state.user) {
           els.headerSession.classList.remove("hidden");
           els.headerSession.textContent = state.user.name + " / " + state.user.role;
+          updateAvatar(els.headerAvatar, state.user);
         } else {
           els.headerSession.classList.add("hidden");
           els.headerSession.textContent = "";
+          els.headerAvatar.textContent = "U";
         }
         els.tree.innerHTML = "";
         renderUserManagement();
@@ -1817,20 +2072,16 @@ export function renderHomePage(): string {
           label.appendChild(readonly);
           return label;
         }
-        const select = document.createElement("select");
-        select.dataset.nodeId = node.id;
-        select.dataset.field = "attrs." + attrName;
-        for (const option of options) {
-          const item = document.createElement("option");
-          item.value = option.value;
-          item.textContent = option.label;
-          item.selected = option.value === value;
-          select.appendChild(item);
-        }
-        select.addEventListener("change", () =>
-          updateTaskAttr(node.id, attrName, select.value || undefined).catch((error) => setStatus(error.message))
+        const customSelect = createCustomSelect(
+          options,
+          value,
+          (newVal) =>
+            updateTaskAttr(node.id, attrName, newVal || undefined).catch((error) => setStatus(error.message)),
+          false
         );
-        label.appendChild(select);
+        customSelect.element.dataset.nodeId = node.id;
+        customSelect.element.dataset.field = "attrs." + attrName;
+        label.appendChild(customSelect.element);
         return label;
       }
 
@@ -1927,20 +2178,17 @@ export function renderHomePage(): string {
       function renderModuleFilterSelect(nodeId, key, labelText, options, value) {
         const label = document.createElement("label");
         label.textContent = labelText;
-        const select = document.createElement("select");
-        select.dataset.moduleFilter = key;
-        for (const option of options) {
-          const item = document.createElement("option");
-          item.value = option.value;
-          item.textContent = option.label;
-          item.selected = option.value === value;
-          select.appendChild(item);
-        }
-        select.addEventListener("change", () => {
-          taskFilterFor(nodeId)[key] = select.value;
-          render();
-        });
-        label.appendChild(select);
+        const customSelect = createCustomSelect(
+          options,
+          value,
+          (newVal) => {
+            taskFilterFor(nodeId)[key] = newVal;
+            render();
+          },
+          false
+        );
+        customSelect.element.dataset.moduleFilter = key;
+        label.appendChild(customSelect.element);
         return label;
       }
 
@@ -2515,28 +2763,22 @@ export function renderHomePage(): string {
         // 下拉框互斥：同时只能打开一个
         details.addEventListener("toggle", () => {
           if (details.open) {
-            // 关闭用户管理区域其他下拉框
-            const userRows = document.querySelector("#userRows");
-            if (userRows) {
-              for (const other of userRows.querySelectorAll(".multi-select")) {
-                if (other !== details && other.open) {
-                  other.open = false;
-                }
+            for (const other of document.querySelectorAll(".multi-select")) {
+              if (other !== details && other.open) {
+                other.open = false;
               }
             }
           }
         });
 
-        // 点击页面其他地方关闭用户管理下拉框
+        // 点击页面其他地方关闭所有下拉框
         if (!window.__customSelectGlobalClickBound) {
           window.__customSelectGlobalClickBound = true;
           document.addEventListener("click", (event) => {
             const target = event.target;
             if (!target || !target.closest) return;
             if (target.closest(".multi-select")) return;
-            const userRows = document.querySelector("#userRows");
-            if (!userRows) return;
-            for (const detailsEl of userRows.querySelectorAll(".multi-select")) {
+            for (const detailsEl of document.querySelectorAll(".multi-select")) {
               if (detailsEl.open) {
                 detailsEl.open = false;
               }
@@ -3698,6 +3940,286 @@ export function renderHomePage(): string {
       window.setInterval(() => {
         autoReconnectIfNeeded();
       }, RECONNECT_INTERVAL_MS);
+
+      // ── Avatar ──
+
+      const AVATAR_GRADIENTS = [
+        "linear-gradient(135deg, #4f46e5, #7c3aed)",
+        "linear-gradient(135deg, #06b6d4, #0ea5e9)",
+        "linear-gradient(135deg, #16a34a, #22c55e)",
+        "linear-gradient(135deg, #d97706, #f59e0b)",
+        "linear-gradient(135deg, #dc2626, #f97316)",
+        "linear-gradient(135deg, #7c3aed, #a855f7)",
+        "linear-gradient(135deg, #0891b2, #06b6d4)",
+        "linear-gradient(135deg, #4f46e5, #06b6d4)"
+      ];
+
+      function avatarGradientIndex(userId) {
+        if (!userId) return 0;
+        let hash = 0;
+        for (let i = 0; i < userId.length; i++) {
+          hash = ((hash << 5) - hash + userId.charCodeAt(i)) | 0;
+        }
+        return Math.abs(hash) % AVATAR_GRADIENTS.length;
+      }
+
+      function avatarColorIndex(userId) {
+        return avatarGradientIndex(userId);
+      }
+
+      function getAvatarKey(userId) {
+        return "crdt-avatar-" + (userId || "anon");
+      }
+
+      function loadAvatarData(userId) {
+        try {
+          const stored = window.localStorage.getItem(getAvatarKey(userId));
+          return stored || null;
+        } catch { return null; }
+      }
+
+      function saveAvatarData(userId, dataUrl) {
+        try {
+          window.localStorage.setItem(getAvatarKey(userId), dataUrl);
+        } catch { /* quota exceeded, ignore */ }
+      }
+
+      function removeAvatarData(userId) {
+        try {
+          window.localStorage.removeItem(getAvatarKey(userId));
+        } catch { /* ignore */ }
+      }
+
+      function updateAvatar(el, user) {
+        if (!user || !el) return;
+        const avatarData = loadAvatarData(user.id);
+        if (avatarData) {
+          el.textContent = "";
+          el.style.backgroundImage = "url(" + avatarData + ")";
+          el.style.backgroundSize = "cover";
+          el.style.backgroundPosition = "center";
+        } else {
+          el.textContent = user.name ? user.name.charAt(0).toUpperCase() : "U";
+          el.style.backgroundImage = "";
+          el.style.backgroundSize = "";
+          el.style.backgroundPosition = "";
+          el.style.background = AVATAR_GRADIENTS[avatarColorIndex(user.id)];
+        }
+      }
+
+      // ── Settings Modal ──
+
+      function openSettings(tab) {
+        els.settingsDialog.classList.remove("hidden");
+        els.settingsDialog.setAttribute("aria-hidden", "false");
+        switchSettingsTab(tab || "general");
+        populateSettingsForm();
+      }
+
+      function closeSettings() {
+        els.settingsDialog.classList.add("hidden");
+        els.settingsDialog.setAttribute("aria-hidden", "true");
+      }
+
+      function switchSettingsTab(tabName) {
+        for (const tab of document.querySelectorAll(".settings-tab")) {
+          tab.classList.toggle("active", tab.dataset.tab === tabName);
+        }
+        els.settingsPanelGeneral.classList.toggle("hidden", tabName !== "general");
+        els.settingsPanelAccount.classList.toggle("hidden", tabName !== "account");
+      }
+
+      function populateSettingsForm() {
+        if (!state.user) return;
+        updateAvatar(els.settingsAvatar, state.user);
+        els.settingsUsername.value = state.user.username || "";
+        els.settingsName.value = state.user.name || "";
+        els.settingsCurrentPassword.value = "";
+        els.settingsNewPassword.value = "";
+        els.settingsConfirmPassword.value = "";
+        els.settingsProfileStatus.textContent = "";
+        els.darkModeToggle.checked = document.documentElement.dataset.theme === "dark";
+      }
+
+      // ── Settings event handlers ──
+
+      els.settingsBtn.addEventListener("click", () => {
+        els.userDropdown.classList.remove("show");
+        openSettings("account");
+      });
+
+      els.switchAccountBtn.addEventListener("click", () => {
+        els.userDropdown.classList.remove("show");
+        logout().catch((error) => setStatus(error.message));
+      });
+
+      els.settingsClose.addEventListener("click", closeSettings);
+
+      els.settingsDialog.addEventListener("click", (event) => {
+        if (event.target === els.settingsDialog) closeSettings();
+      });
+
+      for (const tab of document.querySelectorAll(".settings-tab")) {
+        tab.addEventListener("click", () => {
+          switchSettingsTab(tab.dataset.tab);
+        });
+      }
+
+      // Dark mode toggle in settings
+      els.darkModeToggle.addEventListener("change", () => {
+        const theme = els.darkModeToggle.checked ? "dark" : "light";
+        document.documentElement.dataset.theme = theme;
+        const themeBtn = document.querySelector("#themeToggle");
+        if (themeBtn) themeBtn.textContent = theme === "dark" ? "☀" : "☾";
+      });
+
+      // Avatar upload
+      els.uploadAvatarBtn.addEventListener("click", () => {
+        els.avatarFileInput.click();
+      });
+
+      els.avatarFileInput.addEventListener("change", () => {
+        const file = els.avatarFileInput.files && els.avatarFileInput.files[0];
+        if (!file || !state.user) return;
+        if (!file.type.startsWith("image/")) {
+          els.settingsProfileStatus.textContent = "请选择图片文件";
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          // Resize to 128x128 before storing
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            canvas.width = 128;
+            canvas.height = 128;
+            const ctx = canvas.getContext("2d");
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, 128, 128);
+              const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+              saveAvatarData(state.user.id, dataUrl);
+              updateAvatar(els.settingsAvatar, state.user);
+              updateAvatar(els.headerAvatar, state.user);
+              els.settingsProfileStatus.textContent = "头像已更新";
+            }
+          };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+        els.avatarFileInput.value = "";
+      });
+
+      // Remove custom avatar
+      els.removeAvatarBtn.addEventListener("click", () => {
+        if (!state.user) return;
+        removeAvatarData(state.user.id);
+        updateAvatar(els.settingsAvatar, state.user);
+        updateAvatar(els.headerAvatar, state.user);
+        els.settingsProfileStatus.textContent = "已恢复默认头像";
+      });
+
+      // Save nickname
+      els.saveNameBtn.addEventListener("click", async () => {
+        const newName = els.settingsName.value.trim();
+        if (!newName) {
+          els.settingsProfileStatus.textContent = "昵称不能为空";
+          return;
+        }
+        if (newName === state.user.name) {
+          els.settingsProfileStatus.textContent = "昵称未修改";
+          return;
+        }
+        try {
+          els.saveNameBtn.disabled = true;
+          els.settingsProfileStatus.textContent = "保存中...";
+          const body = await requestJson("/api/profile", {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ name: newName })
+          });
+          if (body.passwordChanged) {
+            els.settingsProfileStatus.textContent = "昵称已保存，密码变更导致会话刷新，请重新登录";
+            logout();
+            return;
+          }
+          state.user.name = newName;
+          // Sync to user management panel (no operation log)
+          const userInList = state.users.find((u) => u.id === state.user.id);
+          if (userInList) userInList.name = newName;
+          updateAvatar(els.headerAvatar, state.user);
+          updateAvatar(els.settingsAvatar, state.user);
+          els.settingsProfileStatus.textContent = "昵称已保存";
+          render();
+        } catch (error) {
+          els.settingsProfileStatus.textContent = error.message || "保存失败";
+        } finally {
+          els.saveNameBtn.disabled = false;
+        }
+      });
+
+      // Change password
+      els.changePasswordBtn.addEventListener("click", async () => {
+        const currentPassword = els.settingsCurrentPassword.value;
+        const newPassword = els.settingsNewPassword.value;
+        const confirmPassword = els.settingsConfirmPassword.value;
+
+        if (!currentPassword) {
+          els.settingsProfileStatus.textContent = "请输入当前密码";
+          return;
+        }
+        if (!newPassword || newPassword.length < 3) {
+          els.settingsProfileStatus.textContent = "新密码长度不能少于 3 位";
+          return;
+        }
+        if (newPassword !== confirmPassword) {
+          els.settingsProfileStatus.textContent = "两次输入的新密码不一致";
+          return;
+        }
+
+        try {
+          els.changePasswordBtn.disabled = true;
+          els.settingsProfileStatus.textContent = "修改中...";
+          const body = await requestJson("/api/profile", {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ currentPassword, newPassword })
+          });
+          els.settingsProfileStatus.textContent = "密码已修改，会话已刷新，请重新登录";
+          setTimeout(() => logout(), 1500);
+        } catch (error) {
+          els.settingsProfileStatus.textContent = error.message || "修改失败";
+          els.changePasswordBtn.disabled = false;
+        }
+      });
+
+      // Clear cache
+      els.clearCacheBtn.addEventListener("click", () => {
+        state.offline.queue = [];
+        state.editing.drafts = {};
+        saveOfflineQueue();
+        els.settingsProfileStatus.textContent = "本地缓存已清除";
+        setTimeout(() => {
+          if (els.settingsProfileStatus.textContent === "本地缓存已清除") {
+            els.settingsProfileStatus.textContent = "";
+          }
+        }, 2000);
+      });
+
+      // Keep dropdown visible when clicking inside it
+      els.userDropdown.addEventListener("click", (event) => {
+        event.stopPropagation();
+      });
+
+      // Close dropdown when clicking outside
+      document.addEventListener("click", () => {
+        els.userDropdown.classList.remove("show");
+      });
+
+      // Backup: allow click on user-pill to toggle dropdown (for touch devices)
+      els.headerPill.addEventListener("click", (event) => {
+        event.stopPropagation();
+        els.userDropdown.classList.toggle("show");
+      });
 
       window.localStorage.removeItem("crdt-editor-session-token-v1");
       render();

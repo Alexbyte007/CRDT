@@ -80,6 +80,12 @@ export interface UpdateUserRequestBody {
   department?: string;
 }
 
+export interface UpdateProfileRequestBody {
+  name?: string;
+  currentPassword?: string;
+  newPassword?: string;
+}
+
 export interface OperationRequestBody {
   userId?: UserId;
   operation?: ViewOperation;

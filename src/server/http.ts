@@ -21,6 +21,7 @@ import type {
   LoginRequestBody,
   OperationRequestBody,
   RegisterRequestBody,
+  UpdateProfileRequestBody,
   UpdateUserRequestBody,
   UserAccount
 } from "./types";
@@ -218,6 +219,57 @@ export async function handleHttpRequest(
         ok: true,
         deletedUserId: target.id,
         policyVersion: context.policyVersion
+      });
+      return;
+    }
+
+    if (request.method === "PATCH" && url.pathname === "/api/profile") {
+      const user = authenticateRequest(context, request);
+      const body = await readJsonBody<UpdateProfileRequestBody>(request);
+      const account = findAccountByUserId(context, user.id);
+      if (!account) {
+        throw new Error("User account not found.");
+      }
+
+      let passwordChanged = false;
+
+      // Update display name if provided
+      if (typeof body.name === "string" && body.name.trim().length > 0) {
+        const newName = body.name.trim();
+        account.name = newName;
+        user.name = newName;
+      }
+
+      // Update password if provided
+      if (typeof body.newPassword === "string" && body.newPassword.length > 0) {
+        if (typeof body.currentPassword !== "string" || !verifyPassword(body.currentPassword, account.passwordHash)) {
+          throw new AuthenticationError("Current password is incorrect.");
+        }
+        account.passwordHash = hashPassword(body.newPassword);
+        passwordChanged = true;
+      }
+
+      context.accounts.set(account.username, account);
+      context.users.set(user.id, user);
+      context.accountStore?.saveUserAccount(account);
+
+      if (passwordChanged) {
+        rotatePolicyVersion(context);
+        onDocumentChanged();
+        sendJson(response, 200, {
+          ok: true,
+          user: publicUser(user),
+          policyVersion: context.policyVersion,
+          passwordChanged: true
+        });
+        return;
+      }
+
+      sendJson(response, 200, {
+        ok: true,
+        user: publicUser(user),
+        policyVersion: context.policyVersion,
+        passwordChanged: false
       });
       return;
     }
