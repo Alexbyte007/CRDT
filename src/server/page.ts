@@ -313,17 +313,18 @@ export function renderHomePage(): string {
     .employee-table-card { flex: 1; min-width: 0; }
     .employee-log-card { width: 320px; flex-shrink: 0; }
     .section-card { border-radius: var(--radius-xl); padding: 32px; }
+    .section-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
     .section-head.compact { margin-bottom: 24px; }
     .section-head h3 { margin: 0 0 6px; font-size: 20px; letter-spacing: -.03em; }
     .section-head p { margin: 0; color: var(--muted); line-height: 1.6; font-size: 13px; }
 
     /* ── Log limit selector ── */
-    .log-limit-select { position: relative; }
+    .log-limit-select { position: relative; flex: 0 0 auto; }
     .log-limit-select summary {
-      display: inline-flex; align-items: center; gap: 4px;
-      padding: 4px 10px; border: 1px solid var(--line); border-radius: 10px;
-      background: var(--surface-solid); color: var(--muted); font-size: 12px;
-      cursor: pointer; list-style: none; white-space: nowrap;
+      display: grid; place-items: center;
+      width: 32px; height: 32px; border: 1px solid var(--line); border-radius: 10px;
+      background: var(--surface-solid); color: var(--muted); font-size: 16px;
+      cursor: pointer; list-style: none; line-height: 1;
     }
     .log-limit-select summary::-webkit-details-marker { display: none; }
     .log-limit-select summary:hover { border-color: var(--muted); color: var(--text); }
@@ -918,7 +919,7 @@ export function renderHomePage(): string {
                 <p>记录本地视图操作、同步状态和后端合并结果。</p>
               </div>
               <details class="log-limit-select" id="logLimitSelect">
-                <summary id="logLimitSummary">显示 20 条</summary>
+                <summary id="logLimitSummary" title="显示 20 条">☰</summary>
                 <div class="log-limit-menu" id="logLimitMenu"></div>
               </details>
             </div>
@@ -4281,13 +4282,15 @@ export function renderHomePage(): string {
       // ── Log limit selector ──
 
       function updateLogLimitSummary() {
+        var label;
         if (operationLogLimit === 0) {
-          els.logLimitSummary.textContent = "不显示";
+          label = "不显示";
         } else if (operationLogLimit === Infinity) {
-          els.logLimitSummary.textContent = "完全显示";
+          label = "完全显示";
         } else {
-          els.logLimitSummary.textContent = "显示 " + operationLogLimit + " 条";
+          label = "显示 " + operationLogLimit + " 条";
         }
+        els.logLimitSummary.title = label;
       }
 
       function buildLogLimitMenu() {
