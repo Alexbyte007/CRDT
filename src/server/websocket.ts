@@ -11,6 +11,7 @@ import type {
 import { authenticateToken } from "./auth";
 import { requireUser } from "./http";
 import { applyUndoRequest, applyRedoRequest, applyViewOperationRequest } from "./operations";
+import type { ServerAwarenessManager } from "./awareness";
 
 export interface WebSocketClient {
   socket: WebSocket;
@@ -22,7 +23,8 @@ export function handleWebSocketConnection(
   request: IncomingMessage,
   context: CollaborationContext,
   clients: Set<WebSocketClient>,
-  onDocumentChanged: () => void = () => {}
+  onDocumentChanged: () => void = () => {},
+  awarenessManager?: ServerAwarenessManager
 ): void {
   const url = new URL(request.url ?? "/", "http://localhost");
   const client: WebSocketClient = {
@@ -34,6 +36,11 @@ export function handleWebSocketConnection(
     const user = authenticateToken(context, url.searchParams.get("token"));
     client.userId = user.id;
     clients.add(client);
+
+    // Register user as online (no focused node yet)
+    if (awarenessManager) {
+      awarenessManager.update(user.id, user.name, { nodeId: undefined });
+    }
 
     sendServerMessage(socket, {
       type: "view",
@@ -53,7 +60,7 @@ export function handleWebSocketConnection(
   socket.on("message", (raw) => {
     try {
       const message = JSON.parse(raw.toString()) as ClientMessage;
-      handleClientMessage(client, message, context, clients, onDocumentChanged);
+      handleClientMessage(client, message, context, clients, onDocumentChanged, awarenessManager);
     } catch (error) {
       sendServerMessage(socket, errorMessage(error));
     }
@@ -61,15 +68,25 @@ export function handleWebSocketConnection(
 
   socket.on("close", () => {
     clients.delete(client);
+    if (awarenessManager) {
+      awarenessManager.remove(client.userId);
+    }
   });
 }
 
-export function kickClients(clients: Set<WebSocketClient>, userIds: string[]): void {
+export function kickClients(
+  clients: Set<WebSocketClient>,
+  userIds: string[],
+  awarenessManager?: ServerAwarenessManager
+): void {
   const ids = new Set(userIds);
   for (const client of clients) {
     if (ids.has(client.userId)) {
       client.socket.close(4001, "Session revoked");
       clients.delete(client);
+      if (awarenessManager) {
+        awarenessManager.remove(client.userId);
+      }
     }
   }
 }
@@ -103,10 +120,19 @@ function handleClientMessage(
   message: ClientMessage,
   context: CollaborationContext,
   clients: Set<WebSocketClient>,
-  onDocumentChanged: () => void = () => {}
+  onDocumentChanged: () => void = () => {},
+  awarenessManager?: ServerAwarenessManager
 ): void {
   if (message.type === "ping") {
     sendServerMessage(client.socket, { type: "pong" });
+    return;
+  }
+
+  if (message.type === "awareness") {
+    const user = requireUser(context, client.userId);
+    if (awarenessManager) {
+      awarenessManager.update(user.id, user.name, message.awareness);
+    }
     return;
   }
 

@@ -225,6 +225,18 @@ export interface UserAccount {
   createdAt: number;
 }
 
+export interface AwarenessUserState {
+  userId: string;
+  userName: string;
+  color: string;
+  nodeId?: string;
+  lastSeen: number;
+}
+
+export interface ClientAwarenessState {
+  nodeId?: string | null;
+}
+
 export type ClientMessage =
   | {
       type: "operation";
@@ -245,6 +257,10 @@ export type ClientMessage =
     }
   | {
       type: "ping";
+    }
+  | {
+      type: "awareness";
+      awareness: ClientAwarenessState;
     };
 
 export interface ChangeInfo {
@@ -310,4 +326,8 @@ export type ServerMessage =
     }
   | {
       type: "pong";
+    }
+  | {
+      type: "awareness";
+      states: AwarenessUserState[];
     };

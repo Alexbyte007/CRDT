@@ -15,6 +15,7 @@ import {
   kickClients,
   type WebSocketClient
 } from "./websocket";
+import { ServerAwarenessManager } from "./awareness";
 
 export function createCollaborationServer(
   options: CollaborationServerOptions
@@ -34,6 +35,10 @@ export function createCollaborationServer(
   };
 
   const clients = new Set<WebSocketClient>();
+  const awarenessManager = new ServerAwarenessManager();
+  awarenessManager.setup(clients, context);
+  awarenessManager.start();
+
   const persistDocument = () => {
     options.documentStore?.save(context.crdt);
   };
@@ -42,7 +47,7 @@ export function createCollaborationServer(
       persistDocument();
       broadcastViews(context, clients);
     }, (revokedUserIds) => {
-      kickClients(clients, revokedUserIds);
+      kickClients(clients, revokedUserIds, awarenessManager);
     });
   });
   const wsServer = new WebSocketServer({ noServer: true });
@@ -56,11 +61,12 @@ export function createCollaborationServer(
     }
 
     wsServer.handleUpgrade(request, socket, head, (webSocket) => {
-      handleWebSocketConnection(webSocket, request, context, clients, persistDocument);
+      handleWebSocketConnection(webSocket, request, context, clients, persistDocument, awarenessManager);
     });
   });
 
   httpServer.on("close", () => {
+    awarenessManager.stop();
     for (const client of clients) {
       client.socket.close();
     }

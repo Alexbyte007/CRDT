@@ -40,6 +40,7 @@ export function renderHomePage(): string {
       --line: rgba(148, 163, 184, .20);
       --shadow: 0 24px 70px rgba(0, 0, 0, .35);
       --shadow-soft: 0 14px 42px rgba(0, 0, 0, .26);
+      --success: #22c55e;
     }
     * { box-sizing: border-box; }
     body {
@@ -90,6 +91,32 @@ export function renderHomePage(): string {
     .brand-title strong { font-size: 15px; letter-spacing: -.02em; }
     
     .topbar-actions { display: flex; align-items: center; gap: 10px; }
+
+    /* ── Online presence badge (topbar center) ── */
+    .topbar-center {
+      position: absolute; left: 50%; transform: translateX(-50%);
+      pointer-events: none;
+    }
+    .online-count-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 16px; border-radius: 999px;
+      background: rgba(22, 163, 74, 0.08); border: 1px solid rgba(22, 163, 74, 0.2);
+      font-size: 13px; font-weight: 600;
+      pointer-events: auto;
+    }
+    .online-dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: var(--success, #16a34a);
+      animation: presence-pulse 2s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+    .online-count-text {
+      color: var(--success, #16a34a);
+    }
+    @keyframes presence-pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(22,163,74,0.5); }
+      50% { opacity: 0.6; box-shadow: 0 0 0 6px rgba(22,163,74,0); }
+    }
 
     .btn {
       border-radius: 14px; padding: 10px 14px; background: var(--surface-solid); color: var(--text);
@@ -471,11 +498,68 @@ export function renderHomePage(): string {
       white-space: nowrap;
     }
     .node-child-count { color: var(--brand); background: rgba(79,70,229,.10); }
+
+    /* ── Indicator column: expand arrow + presence icon stacked ── */
+    .node-indicator-col {
+      display: flex; flex-direction: column; align-items: center; gap: 20px;
+      align-self: start;
+    }
+    .node-presence-icon {
+      display: flex; align-items: center; justify-content: center;
+      position: relative;
+      width: 28px; height: 28px; cursor: default;
+    }
+    .node-presence-icon::before {
+      content: "👤"; font-size: 14px; line-height: 1;
+    }
+    .presence-dot {
+      position: absolute; bottom: -1px; right: -1px;
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #9ca3af; /* gray = no one editing */
+      border: 1.5px solid var(--bg, #fff);
+      transition: background 0.25s ease;
+    }
+    .presence-dot.active {
+      background: var(--success, #16a34a); /* green = someone is editing */
+      box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.25);
+    }
+    /* ── Global presence tooltip (body-level, escapes node overflow) ── */
+    .presence-tooltip {
+      display: none; position: fixed; z-index: 100000;
+      min-width: 140px; padding: 6px; border-radius: 12px;
+      background: var(--surface-solid, #fff); border: 1px solid var(--line, #e5e7eb);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+      white-space: nowrap; pointer-events: none;
+    }
+    .presence-tooltip.show {
+      display: block;
+    }
+    .presence-user-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 8px; border-radius: 8px; font-size: 12px;
+    }
+    .presence-user-row + .presence-user-row {
+      margin-top: 2px;
+    }
+    .presence-empty-hint {
+      color: var(--muted); font-size: 12px; padding: 6px 4px;
+      text-align: center;
+    }
+    .presence-user-avatar {
+      width: 22px; height: 22px; border-radius: 50%;
+      display: grid; place-items: center;
+      color: #fff; font-size: 10px; font-weight: 700; flex-shrink: 0;
+    }
+    .presence-user-name {
+      color: var(--text, #1f2937); font-weight: 500;
+    }
+
     .node-expand-indicator {
-      width: 30px; height: 30px; border-radius: 11px;
+      width: 28px; height: 28px; border-radius: 10px;
       display: grid; place-items: center; color: var(--muted);
       background: var(--surface-2); border: 1px solid var(--line);
       transition: transform .2s ease, color .2s ease, background .2s ease;
+      flex-shrink: 0;
     }
     .node-expand-indicator::before {
       content: ""; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
@@ -846,6 +930,7 @@ export function renderHomePage(): string {
     </style>
   </head>
   <body class="login-mode">
+    <div id="presenceTooltip" class="presence-tooltip"></div>
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark" style="font-size: 14px;">CRDT</div>
@@ -1187,6 +1272,11 @@ export function renderHomePage(): string {
         view: null,
         stateVector: "",
         socket: null,
+        onlineUsers: [],
+        presence: {
+          focusedNodeId: null,
+          _sendTimer: null
+        },
         editing: {
           timers: {},
           drafts: {},
@@ -1221,6 +1311,8 @@ export function renderHomePage(): string {
       };
 
       const els = {
+        topbarCenter: document.querySelector(".topbar-center"),
+        presenceTooltip: document.querySelector("#presenceTooltip"),
         loginPanel: document.querySelector("#loginPanel"),
         loginUsername: document.querySelector("#loginUsername"),
         loginPassword: document.querySelector("#loginPassword"),
@@ -1805,6 +1897,46 @@ export function renderHomePage(): string {
         return null;
       }
 
+      function renderOnlineIndicator() {
+        if (!els.topbarCenter) return;
+        const onlineCount = state.onlineUsers.length + 1; // +1 for self
+        els.topbarCenter.innerHTML =
+          '<div class="online-count-badge">' +
+            '<span class="online-dot"></span>' +
+            '<span class="online-count-text">在线人数 ' + onlineCount + '</span>' +
+          '</div>';
+      }
+
+      function getEditorsByNode() {
+        const map = {};
+        for (const user of state.onlineUsers) {
+          if (user.nodeId) {
+            if (!map[user.nodeId]) map[user.nodeId] = [];
+            map[user.nodeId].push(user);
+          }
+        }
+        return map;
+      }
+
+      function renderNodeEditingIndicators() {
+        const editorsByNode = getEditorsByNode();
+        for (const nodeEl of document.querySelectorAll(".node")) {
+          const nodeId = nodeEl.dataset.nodeId;
+          const editors = editorsByNode[nodeId] || [];
+          const dot = nodeEl.querySelector(".presence-dot");
+          if (!dot) continue;
+          if (editors.length > 0) {
+            dot.classList.add("active");
+          } else {
+            dot.classList.remove("active");
+          }
+        }
+      }
+
+      function escapeAttr(value) {
+        return String(value).replace(/[^\w#,()\-.\s]/g, "");
+      }
+
       function render() {
         const focus = captureEditorFocus();
         document.body.className = state.user ? "app-mode" : "login-mode";
@@ -1824,6 +1956,7 @@ export function renderHomePage(): string {
         if (!state.view) {
           renderMarkdownEditorDrawer();
           restoreEditorFocus(focus);
+          renderOnlineIndicator();
           return;
         }
         for (const root of state.view.roots) {
@@ -1831,6 +1964,8 @@ export function renderHomePage(): string {
         }
         renderMarkdownEditorDrawer();
         restoreEditorFocus(focus);
+        renderOnlineIndicator();
+        renderNodeEditingIndicators();
       }
 
       function renderSyncState() {
@@ -2157,6 +2292,7 @@ export function renderHomePage(): string {
 
       function openMarkdownEditor(nodeId) {
         state.markdownEditor.activeNodeId = nodeId;
+        sendPresence(nodeId);
         if (!state.markdownEditor.mode) {
           state.markdownEditor.mode = "write";
         }
@@ -2173,6 +2309,7 @@ export function renderHomePage(): string {
           autoSaveNode(node.id).catch((error) => setStatus(error.message));
         }
         state.markdownEditor.activeNodeId = null;
+        clearPresence();
         renderMarkdownEditorDrawer();
       }
 
@@ -2581,8 +2718,18 @@ export function renderHomePage(): string {
         preview.dataset.mdPreviewBound = "true";
         setEditableMarkdownEmptyState(preview);
         preview.addEventListener("input", () => syncMarkdownDraftFromPreview(node, preview));
-        preview.addEventListener("blur", () => autoSaveNode(node.id).catch((error) => setStatus(error.message)));
-        preview.addEventListener("focus", () => updateMarkdownBlockMenuForSelection(preview));
+        preview.addEventListener("blur", () => {
+          autoSaveNode(node.id).catch((error) => setStatus(error.message));
+          window.requestAnimationFrame(() => {
+            if (state.presence.focusedNodeId === node.id) {
+              clearPresence();
+            }
+          });
+        });
+        preview.addEventListener("focus", () => {
+          sendPresence(node.id);
+          updateMarkdownBlockMenuForSelection(preview);
+        });
         preview.addEventListener("keyup", () => updateMarkdownBlockMenuForSelection(preview));
         preview.addEventListener("mouseup", () => updateMarkdownBlockMenuForSelection(preview));
         preview.addEventListener("paste", handleEditableMarkdownPaste);
@@ -3302,11 +3449,19 @@ export function renderHomePage(): string {
           titleInput.placeholder = "节点标题";
           titleInput.dataset.nodeId = node.id;
           titleInput.dataset.field = "title";
+          titleInput.addEventListener("focus", () => sendPresence(node.id));
           titleInput.addEventListener("input", () => {
             getNodeDraft(node).title = titleInput.value;
             scheduleAutoSave(node.id);
           });
-          titleInput.addEventListener("blur", () => autoSaveNode(node.id).catch((error) => setStatus(error.message)));
+          titleInput.addEventListener("blur", () => {
+            scheduleAutoSave(node.id);
+            window.requestAnimationFrame(() => {
+              if (state.presence.focusedNodeId === node.id) {
+                clearPresence();
+              }
+            });
+          });
           titleBlock.appendChild(titleInput);
         } else {
           const title = document.createElement("strong");
@@ -3335,10 +3490,23 @@ export function renderHomePage(): string {
         titleBlock.appendChild(meta);
         summary.appendChild(titleBlock);
 
+        // Column 3 wrapper: expand-indicator + presence icon stacked vertically
+        const indicatorCol = document.createElement("div");
+        indicatorCol.className = "node-indicator-col";
+
         const detailIndicator = document.createElement("span");
         detailIndicator.className = "node-expand-indicator";
         detailIndicator.setAttribute("aria-hidden", "true");
-        summary.appendChild(detailIndicator);
+        indicatorCol.appendChild(detailIndicator);
+
+        const presenceIcon = document.createElement("div");
+        presenceIcon.className = "node-presence-icon";
+        const presenceDot = document.createElement("span");
+        presenceDot.className = "presence-dot";
+        presenceIcon.appendChild(presenceDot);
+        indicatorCol.appendChild(presenceIcon);
+
+        summary.appendChild(indicatorCol);
         box.appendChild(summary);
 
         const detailShell = document.createElement("div");
@@ -3840,6 +4008,43 @@ export function renderHomePage(): string {
           state.socket &&
           (state.socket.readyState === WebSocket.OPEN || state.socket.readyState === WebSocket.CONNECTING)
         );
+      }
+
+      const AWARENESS_THROTTLE_MS = 200;
+
+      function sendPresence(nodeId) {
+        if (!state.token || !isSocketOpen()) return;
+        state.presence.focusedNodeId = nodeId;
+        if (state.presence._sendTimer) return;
+        state.presence._sendTimer = setTimeout(() => {
+          state.presence._sendTimer = null;
+          try {
+            state.socket.send(JSON.stringify({
+              type: "awareness",
+              awareness: { nodeId: state.presence.focusedNodeId }
+            }));
+          } catch (e) {
+            // Silently ignore — awareness is non-critical
+          }
+        }, AWARENESS_THROTTLE_MS);
+      }
+
+      function clearPresence() {
+        if (state.presence._sendTimer) {
+          clearTimeout(state.presence._sendTimer);
+          state.presence._sendTimer = null;
+        }
+        state.presence.focusedNodeId = null;
+        if (isSocketOpen()) {
+          try {
+            state.socket.send(JSON.stringify({
+              type: "awareness",
+              awareness: { nodeId: null }
+            }));
+          } catch (e) {
+            // Silently ignore
+          }
+        }
       }
 
       function queueForCurrentUser() {
@@ -4808,6 +5013,12 @@ export function renderHomePage(): string {
             syncOfflineQueue({ silent: true }).catch((error) => setStatus(error.message));
             return;
           }
+          if (message.type === "awareness") {
+            state.onlineUsers = message.states || [];
+            renderOnlineIndicator();
+            renderNodeEditingIndicators();
+            return;
+          }
           if (message.type === "view" || message.type === "operationApplied") {
             const appliedEnvelope = message.type === "operationApplied"
               ? findQueuedEnvelope(message.operationId)
@@ -5276,6 +5487,60 @@ export function renderHomePage(): string {
       });
 
       window.localStorage.removeItem("crdt-editor-session-token-v1");
+
+      // Clean up presence on page unload
+      window.addEventListener("beforeunload", () => {
+        if (isSocketOpen() && state.user) {
+          try {
+            state.socket.send(JSON.stringify({
+              type: "awareness",
+              awareness: { nodeId: null }
+            }));
+          } catch (e) {
+            // Best-effort
+          }
+        }
+      });
+
+      // Delegated tooltip for presence icons (body-level, escapes node overflow:hidden)
+      document.addEventListener("mouseenter", (e) => {
+        const icon = e.target.closest(".node-presence-icon");
+        if (!icon) return;
+        const nodeEl = icon.closest(".node");
+        if (!nodeEl) return;
+        const nodeId = nodeEl.dataset.nodeId;
+        const editorsByNode = getEditorsByNode();
+        const editors = editorsByNode[nodeId] || [];
+        const tooltip = els.presenceTooltip;
+        if (!tooltip) return;
+
+        if (editors.length > 0) {
+          tooltip.innerHTML = editors.map((u) =>
+            '<div class="presence-user-row">' +
+              '<span class="presence-user-avatar" style="background:' + escapeAttr(u.color) + '">' +
+                escapeHtml(u.userName.charAt(0).toUpperCase()) +
+              '</span>' +
+              '<span class="presence-user-name">' + escapeHtml(u.userName) + '</span>' +
+            '</div>'
+          ).join("");
+        } else {
+          tooltip.innerHTML = '<div class="presence-empty-hint">无</div>';
+        }
+
+        const rect = icon.getBoundingClientRect();
+        tooltip.style.left = (rect.right + 8) + "px";
+        tooltip.style.top = (rect.top + rect.height / 2) + "px";
+        tooltip.style.transform = "translateY(-50%)";
+        tooltip.classList.add("show");
+      }, true);
+
+      document.addEventListener("mouseleave", (e) => {
+        const icon = e.target.closest(".node-presence-icon");
+        if (!icon) return;
+        const tooltip = els.presenceTooltip;
+        if (tooltip) tooltip.classList.remove("show");
+      }, true);
+
       render();
     </script>
   </body>
