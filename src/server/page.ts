@@ -1899,7 +1899,7 @@ export function renderHomePage(): string {
 
       function renderOnlineIndicator() {
         if (!els.topbarCenter) return;
-        const onlineCount = state.onlineUsers.length + 1; // +1 for self
+        const onlineCount = state.onlineUsers.length + (state.user ? 1 : 0);
         els.topbarCenter.innerHTML =
           '<div class="online-count-badge">' +
             '<span class="online-dot"></span>' +
