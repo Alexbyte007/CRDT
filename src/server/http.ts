@@ -28,11 +28,13 @@ import type {
 import { renderHomePage } from "./page";
 import { analyzeDeleteImpact } from "./delete-impact";
 import { applyBatchViewOperationRequest, applyUndoRequest, applyRedoRequest, applyViewOperationRequest } from "./operations";
+import type { ServerAwarenessManager } from "./awareness";
 
 export async function handleHttpRequest(
   request: import("node:http").IncomingMessage,
   response: import("node:http").ServerResponse,
   context: CollaborationContext,
+  awarenessManager: ServerAwarenessManager | undefined,
   onDocumentChanged: () => void,
   onSessionRevoked: (userIds: string[]) => void = () => {}
 ): Promise<void> {
@@ -46,6 +48,12 @@ export async function handleHttpRequest(
 
     if (request.method === "GET" && url.pathname === "/health") {
       sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/online-count") {
+      const count = awarenessManager ? awarenessManager.getAllStates().length : 0;
+      sendJson(response, 200, { count });
       return;
     }
 

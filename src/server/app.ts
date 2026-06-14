@@ -43,7 +43,7 @@ export function createCollaborationServer(
     options.documentStore?.save(context.crdt);
   };
   const httpServer = createServer((request, response) => {
-    void handleHttpRequest(request, response, context, () => {
+    void handleHttpRequest(request, response, context, awarenessManager, () => {
       persistDocument();
       broadcastViews(context, clients);
     }, (revokedUserIds) => {

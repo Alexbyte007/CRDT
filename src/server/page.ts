@@ -1273,6 +1273,7 @@ export function renderHomePage(): string {
         stateVector: "",
         socket: null,
         onlineUsers: [],
+        onlineCountPolled: 0,
         presence: {
           focusedNodeId: null,
           _sendTimer: null
@@ -1899,7 +1900,11 @@ export function renderHomePage(): string {
 
       function renderOnlineIndicator() {
         if (!els.topbarCenter) return;
-        const onlineCount = state.onlineUsers.length + (state.user ? 1 : 0);
+        // Logged in: use real-time WebSocket data (self excluded, so +1)
+        // Login screen: use HTTP polling count (includes all users)
+        const onlineCount = state.user
+          ? state.onlineUsers.length + 1
+          : state.onlineCountPolled;
         els.topbarCenter.innerHTML =
           '<div class="online-count-badge">' +
             '<span class="online-dot"></span>' +
@@ -5487,6 +5492,22 @@ export function renderHomePage(): string {
       });
 
       window.localStorage.removeItem("crdt-editor-session-token-v1");
+
+      // Poll online count for login screen (no WebSocket yet)
+      async function pollOnlineCount() {
+        try {
+          const resp = await fetch("/api/online-count");
+          if (resp.ok) {
+            const data = await resp.json();
+            state.onlineCountPolled = data.count ?? 0;
+            if (!state.user) renderOnlineIndicator();
+          }
+        } catch (e) {
+          // Silently ignore — non-critical
+        }
+      }
+      pollOnlineCount();
+      setInterval(pollOnlineCount, 5000);
 
       // Clean up presence on page unload
       window.addEventListener("beforeunload", () => {
