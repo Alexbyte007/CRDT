@@ -8,11 +8,14 @@ import type {
   CollaborationServer,
   CollaborationServerOptions
 } from "./types";
+import { ServerUndoManager } from "./undo";
 import {
   broadcastViews,
   handleWebSocketConnection,
+  kickClients,
   type WebSocketClient
 } from "./websocket";
+import { ServerAwarenessManager } from "./awareness";
 
 export function createCollaborationServer(
   options: CollaborationServerOptions
@@ -27,17 +30,24 @@ export function createCollaborationServer(
     processedOperationIds: new Set(),
     sessions: new Map(),
     policyVersion: 1,
-    policyEngine: new PolicyEngine(defaultPolicyConfig)
+    policyEngine: new PolicyEngine(defaultPolicyConfig),
+    undoManager: new ServerUndoManager({ maxDepth: 50 })
   };
 
   const clients = new Set<WebSocketClient>();
+  const awarenessManager = new ServerAwarenessManager();
+  awarenessManager.setup(clients, context);
+  awarenessManager.start();
+
   const persistDocument = () => {
     options.documentStore?.save(context.crdt);
   };
   const httpServer = createServer((request, response) => {
-    void handleHttpRequest(request, response, context, () => {
+    void handleHttpRequest(request, response, context, awarenessManager, () => {
       persistDocument();
       broadcastViews(context, clients);
+    }, (revokedUserIds) => {
+      kickClients(clients, revokedUserIds, awarenessManager);
     });
   });
   const wsServer = new WebSocketServer({ noServer: true });
@@ -51,11 +61,12 @@ export function createCollaborationServer(
     }
 
     wsServer.handleUpgrade(request, socket, head, (webSocket) => {
-      handleWebSocketConnection(webSocket, request, context, clients, persistDocument);
+      handleWebSocketConnection(webSocket, request, context, clients, persistDocument, awarenessManager);
     });
   });
 
   httpServer.on("close", () => {
+    awarenessManager.stop();
     for (const client of clients) {
       client.socket.close();
     }

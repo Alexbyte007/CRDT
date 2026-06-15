@@ -21,18 +21,22 @@ import type {
   LoginRequestBody,
   OperationRequestBody,
   RegisterRequestBody,
+  UpdateProfileRequestBody,
   UpdateUserRequestBody,
   UserAccount
 } from "./types";
 import { renderHomePage } from "./page";
 import { analyzeDeleteImpact } from "./delete-impact";
-import { applyBatchViewOperationRequest, applyViewOperationRequest } from "./operations";
+import { applyBatchViewOperationRequest, applyUndoRequest, applyRedoRequest, applyViewOperationRequest } from "./operations";
+import type { ServerAwarenessManager } from "./awareness";
 
 export async function handleHttpRequest(
   request: import("node:http").IncomingMessage,
   response: import("node:http").ServerResponse,
   context: CollaborationContext,
-  onDocumentChanged: () => void
+  awarenessManager: ServerAwarenessManager | undefined,
+  onDocumentChanged: () => void,
+  onSessionRevoked: (userIds: string[]) => void = () => {}
 ): Promise<void> {
   try {
     const url = new URL(request.url ?? "/", "http://localhost");
@@ -44,6 +48,12 @@ export async function handleHttpRequest(
 
     if (request.method === "GET" && url.pathname === "/health") {
       sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/online-count") {
+      const count = awarenessManager ? awarenessManager.getAllStates().length : 0;
+      sendJson(response, 200, { count });
       return;
     }
 
@@ -62,7 +72,10 @@ export async function handleHttpRequest(
         throw new AuthenticationError("Invalid username or password.");
       }
 
-      const session = createSession(context, account.id);
+      const { session, revokedUserIds } = createSession(context, account.id);
+      if (revokedUserIds.length > 0) {
+        onSessionRevoked(revokedUserIds);
+      }
       sendJson(response, 200, {
         ok: true,
         token: session.token,
@@ -122,7 +135,10 @@ export async function handleHttpRequest(
 
       context.accountStore?.saveUserAccount(account);
 
-      const session = createSession(context, account.id);
+      const { session, revokedUserIds } = createSession(context, account.id);
+      if (revokedUserIds.length > 0) {
+        onSessionRevoked(revokedUserIds);
+      }
 
       sendJson(response, 200, {
         ok: true,
@@ -215,6 +231,57 @@ export async function handleHttpRequest(
       return;
     }
 
+    if (request.method === "PATCH" && url.pathname === "/api/profile") {
+      const user = authenticateRequest(context, request);
+      const body = await readJsonBody<UpdateProfileRequestBody>(request);
+      const account = findAccountByUserId(context, user.id);
+      if (!account) {
+        throw new Error("User account not found.");
+      }
+
+      let passwordChanged = false;
+
+      // Update display name if provided
+      if (typeof body.name === "string" && body.name.trim().length > 0) {
+        const newName = body.name.trim();
+        account.name = newName;
+        user.name = newName;
+      }
+
+      // Update password if provided
+      if (typeof body.newPassword === "string" && body.newPassword.length > 0) {
+        if (typeof body.currentPassword !== "string" || !verifyPassword(body.currentPassword, account.passwordHash)) {
+          throw new AuthenticationError("Current password is incorrect.");
+        }
+        account.passwordHash = hashPassword(body.newPassword);
+        passwordChanged = true;
+      }
+
+      context.accounts.set(account.username, account);
+      context.users.set(user.id, user);
+      context.accountStore?.saveUserAccount(account);
+
+      if (passwordChanged) {
+        rotatePolicyVersion(context);
+        onDocumentChanged();
+        sendJson(response, 200, {
+          ok: true,
+          user: publicUser(user),
+          policyVersion: context.policyVersion,
+          passwordChanged: true
+        });
+        return;
+      }
+
+      sendJson(response, 200, {
+        ok: true,
+        user: publicUser(user),
+        policyVersion: context.policyVersion,
+        passwordChanged: false
+      });
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/api/view") {
       const user = authenticateRequest(context, request);
       sendJson(response, 200, {
@@ -284,6 +351,34 @@ export async function handleHttpRequest(
         rejected: result.rejected,
         view: result.view,
         stateVector: result.stateVector
+      });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/undo") {
+      const user = authenticateRequest(context, request);
+      const result = applyUndoRequest(context, user);
+      onDocumentChanged();
+      sendJson(response, 200, {
+        ok: true,
+        view: result.view,
+        stateVector: result.stateVector,
+        undoneEntryId: result.entryId,
+        inverseOperationType: result.operationType
+      });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/redo") {
+      const user = authenticateRequest(context, request);
+      const result = applyRedoRequest(context, user);
+      onDocumentChanged();
+      sendJson(response, 200, {
+        ok: true,
+        view: result.view,
+        stateVector: result.stateVector,
+        redoneEntryId: result.entryId,
+        redoOperationType: result.operationType
       });
       return;
     }

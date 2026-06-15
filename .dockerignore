@@ -1,0 +1,15 @@
+.git
+node_modules
+dist
+coverage
+.vitest
+data
+server.log
+npm-debug.log*
+*.tar.gz
+.DS_Store
+.pdf_text.txt
+.ppt_text.txt
+CRDT编辑器.pptx
+题目设计v1.pdf
+优化.txt

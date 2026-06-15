@@ -76,6 +76,7 @@ export function validateViewOperation(
       return;
     case "updateAttrs": {
       ensureCanEdit(user, target, "updateAttrs", policyEngine);
+      validateAttrsPatchShape(operation.attrsPatch);
       const sanitized = policyEngine.sanitizeAttrsPatch(user, target, operation.attrsPatch);
       if (Object.keys(operation.attrsPatch).length > 0 && Object.keys(sanitized).length === 0) {
         throw new AccessControlError("No attrs in this patch are editable by the current user.");
@@ -137,6 +138,7 @@ export function putOperation(
       };
     case "updateAttrs": {
       const node = requireSnapshot(crdt, operation.nodeId);
+      validateAttrsPatchShape(operation.attrsPatch);
       const attrsPatch = policyEngine.sanitizeAttrsPatch(user, node, operation.attrsPatch);
       return {
         type: "updateAttrs",
@@ -210,6 +212,7 @@ function projectNode(
       contentEditableRoles: node.acl.contentEditableRoles ?? node.acl.editableRoles,
       childAddableRoles: node.acl.childAddableRoles ?? node.acl.editableRoles,
       deletableRoles: node.acl.deletableRoles ?? node.acl.editableRoles,
+      attributeEditableRoles: node.acl.attributeEditableRoles ?? node.acl.editableRoles,
       advancedPermissions: normalizeAdvancedPermissions(node.acl.advancedPermissions)
     };
   }
@@ -260,6 +263,9 @@ function buildViewPermissions(
     canRename: policyEngine.canEditNode(user, node, "renameNode"),
     canEditContent: policyEngine.canEditNode(user, node, "updateContent"),
     canEditAttrs: policyEngine.canEditNode(user, node, "updateAttrs"),
+    canEditPriority: policyEngine.canEditAttr(user, node, "priority"),
+    canEditBudget: policyEngine.canEditAttr(user, node, "budget"),
+    canEditTaskStatus: policyEngine.canEditAttr(user, node, "taskStatus"),
     canEditAcl: policyEngine.canEditNode(user, node, "updateAcl")
   };
 }
@@ -272,6 +278,7 @@ function sanitizeAclPatch(
     | "contentEditableRoles"
     | "childAddableRoles"
     | "deletableRoles"
+    | "attributeEditableRoles"
     | "advancedPermissions"
   >
 ): Pick<
@@ -281,6 +288,7 @@ function sanitizeAclPatch(
   | "contentEditableRoles"
   | "childAddableRoles"
   | "deletableRoles"
+  | "attributeEditableRoles"
   | "advancedPermissions"
 > {
   const result: Pick<
@@ -290,6 +298,7 @@ function sanitizeAclPatch(
     | "contentEditableRoles"
     | "childAddableRoles"
     | "deletableRoles"
+    | "attributeEditableRoles"
     | "advancedPermissions"
   > = {};
   if (aclPatch.visibility !== undefined) {
@@ -298,7 +307,7 @@ function sanitizeAclPatch(
     }
     result.visibility = aclPatch.visibility;
   }
-  for (const key of ["allowedRoles", "contentEditableRoles", "childAddableRoles", "deletableRoles"] as const) {
+  for (const key of ["allowedRoles", "contentEditableRoles", "childAddableRoles", "deletableRoles", "attributeEditableRoles"] as const) {
     if (aclPatch[key] !== undefined) {
       result[key] = sanitizeRoleList(aclPatch[key], key);
     }
@@ -401,14 +410,18 @@ function buildFullAddNodeOperation(
   const creatorAndHigherRoles = rolesAtOrAbove(user.role);
   const node: NewTreeNode = {
     id: operation.nodeId ?? createNodeId(user.id, timestamp),
-    type: defaults.type,
+    type: "task",
     title: operation.title,
     content: operation.content ?? "",
     attrs: {
       department: resolveDepartmentDefault(defaults.department, parent),
       ownerId: resolveOwnerDefault(defaults.ownerId, user),
       tags: [],
-      status: defaults.status
+      status: defaults.status,
+      priority: "C",
+      budget: 0,
+      taskStatus: "todo",
+      ...sanitizeNewNodeAttrs(operation.attrs)
     },
     acl: {
       visibility: resolveVisibilityDefault(defaults.visibility, parent),
@@ -417,6 +430,11 @@ function buildFullAddNodeOperation(
       contentEditableRoles: resolveOperationRoleListDefault(
         defaults.editableRoles,
         parent.acl.contentEditableRoles ?? parent.acl.editableRoles,
+        creatorAndHigherRoles
+      ),
+      attributeEditableRoles: resolveOperationRoleListDefault(
+        defaults.editableRoles,
+        parent.acl.attributeEditableRoles ?? parent.acl.editableRoles,
         creatorAndHigherRoles
       ),
       childAddableRoles: resolveOperationRoleListDefault(
@@ -443,6 +461,32 @@ function buildFullAddNodeOperation(
     actorId: user.id,
     timestamp
   };
+}
+
+function validateAttrsPatchShape(attrsPatch: Partial<NodeAttrs>): void {
+  if (attrsPatch.priority !== undefined && !["A", "B", "C"].includes(attrsPatch.priority)) {
+    throw new AccessControlError(`Unsupported task priority: ${attrsPatch.priority}`);
+  }
+  if (attrsPatch.taskStatus !== undefined && !["todo", "doing", "done"].includes(attrsPatch.taskStatus)) {
+    throw new AccessControlError(`Unsupported task status: ${attrsPatch.taskStatus}`);
+  }
+  if (attrsPatch.budget !== undefined && (!Number.isFinite(attrsPatch.budget) || attrsPatch.budget < 0)) {
+    throw new AccessControlError("Task budget must be a non-negative number.");
+  }
+}
+
+function sanitizeNewNodeAttrs(attrs: Partial<NodeAttrs> | undefined): Partial<NodeAttrs> {
+  if (!attrs) {
+    return {};
+  }
+  validateAttrsPatchShape(attrs);
+  const result: Partial<NodeAttrs> = {};
+  for (const key of ["priority", "budget", "taskStatus"] as const) {
+    if (attrs[key] !== undefined) {
+      Object.assign(result, { [key]: attrs[key] });
+    }
+  }
+  return result;
 }
 
 function resolveDepartmentDefault(value: "inherit-parent", parent: TreeNodeSnapshot): string {
