@@ -87,9 +87,12 @@ describe("privacy view transform", () => {
     expect(devPlan).toBeDefined();
     expect(devPlan?.attrs).toEqual({
       department: "dev",
+      priority: "A",
       tags: [],
-      status: "active"
+      status: "active",
+      taskStatus: "doing"
     });
+    expect(devPlan?.attrs).not.toHaveProperty("budget");
     expect(JSON.stringify(devPlan)).not.toContain("allowedRoles");
     expect(JSON.stringify(devPlan)).not.toContain("editableRoles");
   });
@@ -156,16 +159,20 @@ describe("privacy view transform", () => {
     }
 
     expect(fullOperation.node.attrs).toEqual({
+      budget: 0,
       department: "dev",
       ownerId: "u-dev-manager",
+      priority: "C",
       tags: [],
-      status: "active"
+      status: "active",
+      taskStatus: "todo"
     });
     expect(fullOperation.node.acl).toEqual({
       visibility: "department",
       allowedRoles: ["admin", "manager", "member"],
       editableRoles: ["admin", "manager"],
       contentEditableRoles: ["admin", "manager"],
+      attributeEditableRoles: ["admin", "manager"],
       childAddableRoles: ["admin", "manager"],
       deletableRoles: ["admin", "manager"],
       allowedUsers: ["u-dev-manager"],
@@ -231,6 +238,7 @@ describe("privacy view transform", () => {
       allowedRoles: ["admin", "manager", "member", "guest"],
       editableRoles: ["admin", "manager", "member"],
       contentEditableRoles: ["admin", "manager", "member"],
+      attributeEditableRoles: ["admin", "manager", "member"],
       childAddableRoles: ["admin", "manager", "member"],
       deletableRoles: ["admin", "manager", "member"],
       allowedUsers: ["u-dev-member"],
@@ -382,6 +390,59 @@ describe("privacy view transform", () => {
         taskStatus: "doing"
       }
     });
+
+    applyFullDocOperation(
+      crdt,
+      putOperation(
+        crdt,
+        admin,
+        {
+          type: "updateAcl",
+          nodeId: "node-privacy-view-task",
+          aclPatch: {
+            attributeEditableRoles: ["admin"]
+          }
+        },
+        { now: 34 }
+      )
+    );
+
+    const restrictedManagerTask = findViewNode(
+      getView(crdt, manager, { now: 35 }).roots,
+      "node-privacy-view-task"
+    );
+    expect(restrictedManagerTask?.permissions.canEditPriority).toBe(false);
+    expect(restrictedManagerTask?.permissions.canEditBudget).toBe(false);
+    expect(restrictedManagerTask?.permissions.canEditTaskStatus).toBe(true);
+
+    expect(() =>
+      validateViewOperation(crdt, manager, {
+        type: "updateAttrs",
+        nodeId: "node-privacy-view-task",
+        attrsPatch: {
+          budget: 9999
+        }
+      })
+    ).toThrow(AccessControlError);
+
+    expect(
+      putOperation(
+        crdt,
+        manager,
+        {
+          type: "updateAttrs",
+          nodeId: "node-privacy-view-task",
+          attrsPatch: {
+            taskStatus: "done"
+          }
+        },
+        { now: 36 }
+      )
+    ).toMatchObject({
+      attrsPatch: {
+        taskStatus: "done"
+      }
+    });
   });
 
   it("allows admins to update node audience without exposing acl controls to ordinary users", () => {
@@ -396,6 +457,7 @@ describe("privacy view transform", () => {
       visibility: "public",
       allowedRoles: ["admin", "manager", "member", "guest"],
       contentEditableRoles: ["admin", "manager"],
+      attributeEditableRoles: ["admin", "manager"],
       childAddableRoles: ["admin", "manager"],
       deletableRoles: ["admin"],
       advancedPermissions: {

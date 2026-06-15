@@ -132,7 +132,7 @@
   },
   "putDefaults": {
     "addNode": {
-      "type": "doc",
+      "type": "task",
       "department": "inherit-parent",
       "visibility": "inherit-parent",
       "allowedRoles": "inherit-parent",

@@ -49,6 +49,7 @@ export interface NodeAcl {
   contentEditableRoles?: UserRole[];
   childAddableRoles?: UserRole[];
   deletableRoles?: UserRole[];
+  attributeEditableRoles?: UserRole[];
   advancedPermissions?: NodeAdvancedPermissions;
   allowedUsers: UserId[];
   deniedUsers: UserId[];
@@ -186,6 +187,7 @@ export interface ViewNode {
     | "contentEditableRoles"
     | "childAddableRoles"
     | "deletableRoles"
+    | "attributeEditableRoles"
     | "advancedPermissions"
   >;
   children: ViewNode[];
@@ -198,6 +200,9 @@ export interface ViewPermissions {
   canRename: boolean;
   canEditContent: boolean;
   canEditAttrs: boolean;
+  canEditPriority: boolean;
+  canEditBudget: boolean;
+  canEditTaskStatus: boolean;
   canEditAcl: boolean;
 }
 
@@ -260,6 +265,7 @@ export interface ViewUpdateAclOperation {
     | "contentEditableRoles"
     | "childAddableRoles"
     | "deletableRoles"
+    | "attributeEditableRoles"
     | "advancedPermissions"
   >;
 }

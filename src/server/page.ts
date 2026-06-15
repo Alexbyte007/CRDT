@@ -1131,19 +1131,12 @@ export function renderHomePage(): string {
 
     <div id="addNodeDialog" class="modal hidden" aria-hidden="true">
       <div class="modal-card" role="dialog" aria-modal="true">
-        <h2 class="modal-title">添加新节点</h2>
+        <h2 class="modal-title">添加任务节点</h2>
         <p id="addNodeParentInfo" class="modal-copy"></p>
         <div style="display:grid;gap:14px;">
           <label style="display:grid;gap:5px;font-size:12px;color:var(--muted);font-weight:700;">
             <span>节点名称</span>
             <input id="addNodeTitle" type="text" placeholder="输入节点名称" style="width:100%;min-height:38px;border:1px solid var(--line);border-radius:11px;padding:8px 12px;background:var(--surface-solid);color:var(--text);font-size:13px;outline:none;">
-          </label>
-          <label style="display:grid;gap:5px;font-size:12px;color:var(--muted);font-weight:700;">
-            <span>节点类型</span>
-            <select id="addNodeType" style="width:100%;min-height:38px;border:1px solid var(--line);border-radius:11px;padding:8px 12px;background:var(--surface-solid);color:var(--text);font-size:13px;outline:none;appearance:none;background-image:url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2716%27 height=%2716%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%2368758e%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpolyline points=%276 9 12 15 18 9%27%3E%3C/polyline%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 12px center;padding-right:36px;cursor:pointer;">
-              <option value="doc">项目模块</option>
-              <option value="task">任务</option>
-            </select>
           </label>
           <div id="addNodeAclArea"></div>
         </div>
@@ -1397,7 +1390,6 @@ export function renderHomePage(): string {
         addNodeDialog: document.querySelector("#addNodeDialog"),
         addNodeParentInfo: document.querySelector("#addNodeParentInfo"),
         addNodeTitle: document.querySelector("#addNodeTitle"),
-        addNodeType: document.querySelector("#addNodeType"),
         addNodeAclArea: document.querySelector("#addNodeAclArea"),
         addNodeDialogCancel: document.querySelector("#addNodeDialogCancel"),
         addNodeDialogOk: document.querySelector("#addNodeDialogOk"),
@@ -1453,6 +1445,13 @@ export function renderHomePage(): string {
 
       function currentUserId() {
         return state.user ? state.user.id : "";
+      }
+
+      function resetOperationLogs() {
+        state.localLog = [];
+        state.remoteLog = [];
+        operationLogKeys.clear();
+        renderOperationLogs();
       }
 
       function setStatus(text) {
@@ -1551,6 +1550,7 @@ export function renderHomePage(): string {
         state.token = body.token;
         state.user = body.user;
         state.policyVersion = body.policyVersion || 0;
+        resetOperationLogs();
         await loadAdminUsers();
         clearAllAutoSaveTimers();
         state.editing.drafts = {};
@@ -1585,6 +1585,7 @@ export function renderHomePage(): string {
           clearAllAutoSaveTimers();
           state.editing.drafts = {};
           state.markdownEditor.activeNodeId = null;
+          resetOperationLogs();
 
           els.registerPanel.classList.add("hidden");
           els.loginPanel.classList.remove("hidden");
@@ -1644,6 +1645,7 @@ export function renderHomePage(): string {
         state.token = body.token;
         state.user = body.user;
         state.policyVersion = body.policyVersion || 0;
+        resetOperationLogs();
 
         clearRegisterForm();
         clearLoginPassword();
@@ -2389,7 +2391,7 @@ export function renderHomePage(): string {
           { value: "A", label: "A 级" },
           { value: "B", label: "B 级" },
           { value: "C", label: "C 级" }
-        ], attrs.priority || ""));
+        ], attrs.priority || "", node.permissions.canEditPriority));
         if (canSeeBudget(node)) {
           grid.appendChild(renderTaskBudgetControl(node));
         }
@@ -2398,15 +2400,15 @@ export function renderHomePage(): string {
           { value: "todo", label: "待办" },
           { value: "doing", label: "进行中" },
           { value: "done", label: "已完成" }
-        ], attrs.taskStatus || ""));
+        ], attrs.taskStatus || "", node.permissions.canEditTaskStatus));
         panel.appendChild(grid);
         container.appendChild(panel);
       }
 
-      function renderTaskAttrControl(node, attrName, labelText, options, value) {
+      function renderTaskAttrControl(node, attrName, labelText, options, value, canEdit) {
         const label = document.createElement("label");
         label.textContent = labelText;
-        if (!node.permissions.canEditAttrs) {
+        if (!canEdit) {
           const readonly = document.createElement("strong");
           readonly.textContent = attrName === "priority" ? taskPriorityLabel(value) : taskStatusLabel(value);
           label.appendChild(readonly);
@@ -2429,7 +2431,7 @@ export function renderHomePage(): string {
         const label = document.createElement("label");
         label.textContent = "经费预算";
         const value = node.attrs && node.attrs.budget !== undefined ? String(node.attrs.budget) : "";
-        if (!node.permissions.canEditAttrs) {
+        if (!node.permissions.canEditBudget) {
           const readonly = document.createElement("strong");
           readonly.textContent = value || "-";
           label.appendChild(readonly);
@@ -3546,12 +3548,20 @@ export function renderHomePage(): string {
               "节点删除权限已更新"
             )
           );
-          const operationPolicies = [editPolicy, addPolicy, deletePolicy];
+          const attributePolicy = renderAclSelect("谁能改优先级/预算", audienceFromRoles(node.acl.attributeEditableRoles), (audience) =>
+            updateNodeAcl(
+              node.id,
+              { attributeEditableRoles: rolesFromAudience(audience) },
+              "任务属性修改权限已更新"
+            )
+          );
+          const operationPolicies = [editPolicy, addPolicy, deletePolicy, attributePolicy];
           visibilityPolicy.select.onChangeHook = () =>
             syncOperationAclControls(visibilityPolicy.select, operationPolicies);
           syncOperationAclControls(visibilityPolicy.select, operationPolicies);
           policyPanel.appendChild(visibilityPolicy.element);
           policyPanel.appendChild(editPolicy.element);
+          policyPanel.appendChild(attributePolicy.element);
           policyPanel.appendChild(addPolicy.element);
           policyPanel.appendChild(deletePolicy.element);
           if (node.children && node.children.length > 0) {
@@ -4008,6 +4018,42 @@ export function renderHomePage(): string {
         );
       }
 
+      function isLikelyNetworkError(error) {
+        const message = error && error.message ? String(error.message) : String(error || "");
+        return (
+          error instanceof TypeError ||
+          /failed to fetch|networkerror|load failed|fetch|network|socket|offline|断网|离线/i.test(message)
+        );
+      }
+
+      function markCurrentUserSendingItemsPending(reason) {
+        let changed = false;
+        for (const item of state.offline.queue) {
+          if (item.userId !== currentUserId() || item.status !== "sending") continue;
+          item.status = "pending";
+          item.error = {
+            name: "NetworkUnavailable",
+            message: reason || "网络不可用，等待恢复联网后重试"
+          };
+          changed = true;
+        }
+        if (changed) {
+          saveOfflineQueue();
+          renderSyncState();
+        }
+        return changed;
+      }
+
+      function logOfflineQueued(title, detail, key) {
+        appendOperationLog({
+          kind: "local",
+          title,
+          detail,
+          key: key || "offline-queued:" + Date.now()
+        });
+        renderOperationLogs();
+      }
+
       function isSocketActive() {
         return (
           state.socket &&
@@ -4203,7 +4249,7 @@ export function renderHomePage(): string {
         }
 
         if (operations.length > 0) {
-          setStatus(isSocketOpen() ? "编辑已实时提交" : "离线编辑已进入队列");
+          setStatus(isConnectionUsable() ? "编辑已发送，等待服务端确认" : "离线编辑已进入队列");
         }
       }
 
@@ -4211,20 +4257,17 @@ export function renderHomePage(): string {
         const result = await showAddNodeDialog(parentNode);
         if (!result) return; // user cancelled
 
-        const nodeType = result.nodeType || (depth >= 1 ? "task" : "doc");
-        const isTask = nodeType === "task";
-
         await submitOperation({
           type: "addNode",
           parentId: parentNode.id,
-          nodeType: isTask ? "task" : "doc",
+          nodeType: "task",
           title: result.title,
           content: "",
-          attrs: isTask ? {
+          attrs: {
             priority: "C",
             budget: 0,
             taskStatus: "todo"
-          } : undefined,
+          },
           aclPatch: aclPatchFromAudience(result.audience)
         });
       }
@@ -4309,7 +4352,23 @@ export function renderHomePage(): string {
         const nodeTitle = resolveNodeTitle(nodeId);
         const confirmed = await showConfirmDialog("删除节点", "确定要删除节点「" + nodeTitle + "」吗？");
         if (!confirmed) return;
-        const impact = await requestJson("/api/delete-impact?nodeId=" + encodeURIComponent(nodeId));
+        let impact;
+        try {
+          impact = await requestJson("/api/delete-impact?nodeId=" + encodeURIComponent(nodeId));
+        } catch (error) {
+          if (isLikelyNetworkError(error) || !isConnectionUsable()) {
+            await submitOperation({ type: "deleteNode", nodeId });
+            delete state.editing.drafts[nodeId];
+            setStatus("当前离线，删除操作已进入队列，重连后会重新校验");
+            logOfflineQueued(
+              "删除操作已进入离线队列",
+              "重连后服务端会重新分析删除影响",
+              "offline:delete-impact:" + nodeId + ":" + Date.now()
+            );
+            return;
+          }
+          throw error;
+        }
         if (!impact.blocksSilentDelete) {
           await submitOperation({ type: "deleteNode", nodeId });
           delete state.editing.drafts[nodeId];
@@ -4469,9 +4528,8 @@ export function renderHomePage(): string {
 
       function showAddNodeDialog(parentNode) {
         return new Promise((resolve) => {
-          els.addNodeParentInfo.textContent = "父节点：" + quotedNodeTitle(parentNode.title || parentNode.id) + " — 请设置新节点的属性，或直接点击确定使用默认值。";
-          els.addNodeTitle.value = parentNode.type === "task" ? "新任务" : "新项目模块";
-          els.addNodeType.value = parentNode.type === "task" ? "task" : "doc";
+          els.addNodeParentInfo.textContent = "父节点：" + quotedNodeTitle(parentNode.title || parentNode.id) + " — 新节点会默认带任务优先级、经费预算和状态属性。";
+          els.addNodeTitle.value = "新任务节点";
           buildAddNodeAclArea();
           els.addNodeDialog.classList.remove("hidden");
           els.addNodeDialog.setAttribute("aria-hidden", "false");
@@ -4479,8 +4537,7 @@ export function renderHomePage(): string {
           els.addNodeTitle.select();
 
           function onOk() {
-            const title = els.addNodeTitle.value.trim() || (els.addNodeType.value === "task" ? "新任务" : "新项目模块");
-            const nodeType = els.addNodeType.value;
+            const title = els.addNodeTitle.value.trim() || "新任务节点";
             const visibilityEl = document.querySelector("[data-field='addNodeVisibility'] .multi-select");
             let audience = "dev-team";
             // Read selected value from the custom select summary text
@@ -4493,7 +4550,7 @@ export function renderHomePage(): string {
               else if (text.includes("所有人")) audience = "all";
             }
             cleanup();
-            resolve({ title, nodeType, audience });
+            resolve({ title, audience });
           }
 
           function onCancel() {
@@ -4577,7 +4634,8 @@ export function renderHomePage(): string {
             allowedRoles: ["admin"],
             contentEditableRoles: ["admin"],
             childAddableRoles: ["admin"],
-            deletableRoles: ["admin"]
+            deletableRoles: ["admin"],
+            attributeEditableRoles: ["admin"]
           };
         }
         if (audience === "admin-manager") {
@@ -4629,12 +4687,17 @@ export function renderHomePage(): string {
         });
         renderOperationLogs();
         if (isConnectionUsable()) {
-          sendQueuedOperation(envelope);
-          setStatus("操作已发送，等待确认");
+          if (sendQueuedOperation(envelope)) {
+            setStatus("操作已发送，等待确认");
+          } else {
+            setStatus("网络不可用，操作已进入离线队列");
+          }
         } else if (state.offline.simulated) {
           setStatus("模拟离线中，操作已进入队列");
+          logOfflineQueued(summary.title, "已进入离线队列，等待恢复联网后同步", "offline:queued:" + envelope.id);
         } else {
           setStatus("WebSocket 离线，操作已进入队列");
+          logOfflineQueued(summary.title, "已进入离线队列，等待恢复联网后同步", "offline:queued:" + envelope.id);
         }
       }
 
@@ -4658,6 +4721,7 @@ export function renderHomePage(): string {
             message: error && error.message ? error.message : String(error)
           };
           saveOfflineQueue();
+          logOfflineQueued("网络已断开", "操作已留在离线队列，等待恢复联网", "offline:send-failed:" + envelope.id);
           return false;
         }
       }
@@ -4777,18 +4841,22 @@ export function renderHomePage(): string {
           }
           renderOperationLogs();
         } catch (error) {
+          const message = error && error.message ? error.message : String(error);
           for (const item of operations) {
             if (item.status === "sending") {
               item.status = "pending";
               item.error = {
                 name: "SyncError",
-                message: error && error.message ? error.message : String(error)
+                message
               };
             }
           }
           saveOfflineQueue();
-          if (!options || !options.silent) {
-            setStatus(error.message);
+          if (isLikelyNetworkError(error)) {
+            setStatus("网络不可用，离线队列已保留，稍后会自动重试");
+            logOfflineQueued("同步暂缓", "网络不可用，等待恢复联网后继续同步", "offline:sync-paused:" + Date.now());
+          } else if (!options || !options.silent) {
+            setStatus(message);
           }
         } finally {
           state.offline.syncInFlight = false;
@@ -4907,6 +4975,7 @@ export function renderHomePage(): string {
         state.socket = null;
         state.offline.connected = false;
         state.offline.connectionStatus = state.offline.simulated ? "simulated-offline" : "offline";
+        markCurrentUserSendingItemsPending("连接断开，等待恢复联网后重试");
         if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
           socket.close();
         }
@@ -4968,6 +5037,7 @@ export function renderHomePage(): string {
         state.socket = null;
         state.offline.connected = false;
         state.offline.connectionStatus = "stale";
+        markCurrentUserSendingItemsPending("心跳超时，等待恢复联网后重试");
         if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
           socket.close();
         }
@@ -5126,6 +5196,7 @@ export function renderHomePage(): string {
           if (state.socket !== socket) return;
           state.socket = null;
           state.offline.connected = false;
+          markCurrentUserSendingItemsPending("WebSocket 已断开，等待恢复联网后重试");
           if (event.code === 4001) {
             setLoginStatus("该账号已在其他地方登录，当前会话已失效。");
             logout();
@@ -5142,6 +5213,7 @@ export function renderHomePage(): string {
           state.socket = null;
           state.offline.connected = false;
           state.offline.connectionStatus = "offline";
+          markCurrentUserSendingItemsPending("WebSocket 错误，等待恢复联网后重试");
           renderSyncState();
         };
       }

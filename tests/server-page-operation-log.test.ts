@@ -20,6 +20,8 @@ describe("home page operation log UI", () => {
     expect(html).not.toContain('pushLog("local", logTitle, JSON.stringify(operation))');
     expect(html).toContain("operationLogLimit");
     expect(html).toContain("operationLogKeys");
+    expect(html).toContain("function resetOperationLogs()");
+    expect(html).toContain("operationLogKeys.clear()");
     expect(html).toContain("employee-log-item local");
     expect(html).toContain("employee-log-item remote");
     expect(html).toContain("employee-log-item failed");

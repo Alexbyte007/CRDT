@@ -212,6 +212,7 @@ function projectNode(
       contentEditableRoles: node.acl.contentEditableRoles ?? node.acl.editableRoles,
       childAddableRoles: node.acl.childAddableRoles ?? node.acl.editableRoles,
       deletableRoles: node.acl.deletableRoles ?? node.acl.editableRoles,
+      attributeEditableRoles: node.acl.attributeEditableRoles ?? node.acl.editableRoles,
       advancedPermissions: normalizeAdvancedPermissions(node.acl.advancedPermissions)
     };
   }
@@ -262,6 +263,9 @@ function buildViewPermissions(
     canRename: policyEngine.canEditNode(user, node, "renameNode"),
     canEditContent: policyEngine.canEditNode(user, node, "updateContent"),
     canEditAttrs: policyEngine.canEditNode(user, node, "updateAttrs"),
+    canEditPriority: policyEngine.canEditAttr(user, node, "priority"),
+    canEditBudget: policyEngine.canEditAttr(user, node, "budget"),
+    canEditTaskStatus: policyEngine.canEditAttr(user, node, "taskStatus"),
     canEditAcl: policyEngine.canEditNode(user, node, "updateAcl")
   };
 }
@@ -274,6 +278,7 @@ function sanitizeAclPatch(
     | "contentEditableRoles"
     | "childAddableRoles"
     | "deletableRoles"
+    | "attributeEditableRoles"
     | "advancedPermissions"
   >
 ): Pick<
@@ -283,6 +288,7 @@ function sanitizeAclPatch(
   | "contentEditableRoles"
   | "childAddableRoles"
   | "deletableRoles"
+  | "attributeEditableRoles"
   | "advancedPermissions"
 > {
   const result: Pick<
@@ -292,6 +298,7 @@ function sanitizeAclPatch(
     | "contentEditableRoles"
     | "childAddableRoles"
     | "deletableRoles"
+    | "attributeEditableRoles"
     | "advancedPermissions"
   > = {};
   if (aclPatch.visibility !== undefined) {
@@ -300,7 +307,7 @@ function sanitizeAclPatch(
     }
     result.visibility = aclPatch.visibility;
   }
-  for (const key of ["allowedRoles", "contentEditableRoles", "childAddableRoles", "deletableRoles"] as const) {
+  for (const key of ["allowedRoles", "contentEditableRoles", "childAddableRoles", "deletableRoles", "attributeEditableRoles"] as const) {
     if (aclPatch[key] !== undefined) {
       result[key] = sanitizeRoleList(aclPatch[key], key);
     }
@@ -403,7 +410,7 @@ function buildFullAddNodeOperation(
   const creatorAndHigherRoles = rolesAtOrAbove(user.role);
   const node: NewTreeNode = {
     id: operation.nodeId ?? createNodeId(user.id, timestamp),
-    type: operation.nodeType ?? defaults.type,
+    type: "task",
     title: operation.title,
     content: operation.content ?? "",
     attrs: {
@@ -411,6 +418,9 @@ function buildFullAddNodeOperation(
       ownerId: resolveOwnerDefault(defaults.ownerId, user),
       tags: [],
       status: defaults.status,
+      priority: "C",
+      budget: 0,
+      taskStatus: "todo",
       ...sanitizeNewNodeAttrs(operation.attrs)
     },
     acl: {
@@ -420,6 +430,11 @@ function buildFullAddNodeOperation(
       contentEditableRoles: resolveOperationRoleListDefault(
         defaults.editableRoles,
         parent.acl.contentEditableRoles ?? parent.acl.editableRoles,
+        creatorAndHigherRoles
+      ),
+      attributeEditableRoles: resolveOperationRoleListDefault(
+        defaults.editableRoles,
+        parent.acl.attributeEditableRoles ?? parent.acl.editableRoles,
         creatorAndHigherRoles
       ),
       childAddableRoles: resolveOperationRoleListDefault(
