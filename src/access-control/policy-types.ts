@@ -49,7 +49,7 @@ export interface AttrConstraint {
 }
 
 export interface AddNodeDefaults {
-  type: "doc";
+  type: "task";
   department: "inherit-parent";
   visibility: "inherit-parent";
   allowedRoles: "inherit-parent";

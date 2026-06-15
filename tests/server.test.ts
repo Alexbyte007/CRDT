@@ -40,8 +40,19 @@ describe("collaboration server", () => {
     expect(flattenViewIds(body.view)).toEqual([
       "node-root",
       "node-public",
+      "node-public-announcement-task",
+      "node-public-training-task",
       "node-dev-plan",
-      "node-dev-requirements"
+      "node-offline-sync-task",
+      "node-privacy-view-task",
+      "node-delete-conflict-task",
+      "node-doc-cleanup-task",
+      "node-dev-requirements",
+      "node-requirement-review-task",
+      "node-api-spec-task",
+      "node-frontend-module",
+      "node-tree-editing-task",
+      "node-operation-log-task"
     ]);
   });
 
@@ -1391,7 +1402,9 @@ describe("collaboration server", () => {
       expect(updated.type).toBe("view");
       expect(updated.type === "view" ? flattenViewIds(updated.view) : []).toEqual([
         "node-root",
-        "node-public"
+        "node-public",
+        "node-public-announcement-task",
+        "node-public-training-task"
       ]);
     } finally {
       memberSocket.close();

@@ -24,9 +24,16 @@ describe("Yjs JSON tree document operations", () => {
       "node-public",
       "node-dev-plan",
       "node-dev-requirements",
+      "node-frontend-module",
       "node-finance"
     ]);
-    expect(snapshot.nodes["node-dev-plan"].children).toEqual(["node-module-a"]);
+    expect(snapshot.nodes["node-dev-plan"].children).toEqual([
+      "node-module-a",
+      "node-offline-sync-task",
+      "node-privacy-view-task",
+      "node-delete-conflict-task",
+      "node-doc-cleanup-task"
+    ]);
   });
 
   it("adds a child node under an existing parent", () => {
@@ -62,7 +69,11 @@ describe("Yjs JSON tree document operations", () => {
     expect(getNodeSnapshot(crdt, "node-api-design")?.parentId).toBe("node-dev-plan");
     expect(getNodeSnapshot(crdt, "node-dev-plan")?.children).toEqual([
       "node-module-a",
-      "node-api-design"
+      "node-api-design",
+      "node-offline-sync-task",
+      "node-privacy-view-task",
+      "node-delete-conflict-task",
+      "node-doc-cleanup-task"
     ]);
   });
 
@@ -133,12 +144,20 @@ describe("Yjs JSON tree document operations", () => {
     });
 
     const snapshot = getDocumentSnapshot(crdt);
-    expect(deleted.map((node) => node.id)).toEqual(["node-dev-plan", "node-module-a"]);
+    expect(deleted.map((node) => node.id)).toEqual([
+      "node-dev-plan",
+      "node-module-a",
+      "node-offline-sync-task",
+      "node-privacy-view-task",
+      "node-delete-conflict-task",
+      "node-doc-cleanup-task"
+    ]);
     expect(snapshot.nodes["node-dev-plan"]).toBeUndefined();
     expect(snapshot.nodes["node-module-a"]).toBeUndefined();
     expect(snapshot.nodes["node-root"].children).toEqual([
       "node-public",
       "node-dev-requirements",
+      "node-frontend-module",
       "node-finance"
     ]);
     expect(snapshot.tombstones["node-dev-plan"].updatedAt).toBe(6);
@@ -163,7 +182,12 @@ describe("Yjs JSON tree document operations", () => {
     expect(snapshot.nodes["node-root"].children).toEqual([
       "node-public",
       "node-module-a",
+      "node-offline-sync-task",
+      "node-privacy-view-task",
+      "node-delete-conflict-task",
+      "node-doc-cleanup-task",
       "node-dev-requirements",
+      "node-frontend-module",
       "node-finance"
     ]);
     expect(snapshot.tombstones["node-dev-plan"].updatedAt).toBe(7);

@@ -9,6 +9,7 @@ import { encodeStateVector } from "../src/crdt/state-vector";
 import { createSampleDocument, sampleUsers } from "../src/fixtures/sample";
 import { applyBatchViewOperationRequest } from "../src/server/operations";
 import type { CollaborationContext } from "../src/server/types";
+import { ServerUndoManager } from "../src/server/undo";
 import { getView, putOperation } from "../src/view/transform";
 import type { UpdateAclOperation, User, ViewNode } from "../src/types";
 
@@ -53,7 +54,15 @@ describe("concurrent heterogeneous view sync", () => {
     expect(snapshot.nodes["node-manager-add"]).toBeDefined();
     expect(snapshot.nodes["node-admin-add"]).toBeDefined();
     expect(new Set(snapshot.nodes["node-dev-plan"].children)).toEqual(
-      new Set(["node-module-a", "node-manager-add", "node-admin-add"])
+      new Set([
+        "node-module-a",
+        "node-offline-sync-task",
+        "node-privacy-view-task",
+        "node-delete-conflict-task",
+        "node-doc-cleanup-task",
+        "node-manager-add",
+        "node-admin-add"
+      ])
     );
   });
 
@@ -184,7 +193,8 @@ describe("concurrent heterogeneous view sync", () => {
       processedOperationIds: new Set(),
       sessions: new Map(),
       policyVersion: 1,
-      policyEngine: defaultPolicyEngine
+      policyEngine: defaultPolicyEngine,
+      undoManager: new ServerUndoManager()
     };
     const baseStateVector = encodeStateVector(crdt);
 
@@ -236,7 +246,8 @@ describe("concurrent heterogeneous view sync", () => {
       processedOperationIds: new Set(),
       sessions: new Map(),
       policyVersion: 1,
-      policyEngine: defaultPolicyEngine
+      policyEngine: defaultPolicyEngine,
+      undoManager: new ServerUndoManager()
     };
     const baseStateVector = encodeStateVector(crdt);
 
@@ -300,7 +311,8 @@ describe("concurrent heterogeneous view sync", () => {
       processedOperationIds: new Set(),
       sessions: new Map(),
       policyVersion: 1,
-      policyEngine: defaultPolicyEngine
+      policyEngine: defaultPolicyEngine,
+      undoManager: new ServerUndoManager()
     };
 
     applyFullDocOperation(

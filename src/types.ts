@@ -11,7 +11,9 @@ export type OperationType =
   | "renameNode"
   | "updateContent"
   | "updateAttrs"
-  | "updateAcl";
+  | "updateAcl"
+  | "resurrectNode"
+  | "resurrectNodeKeepChildren";
 
 export interface User {
   id: UserId;
@@ -35,6 +37,9 @@ export interface NodeAttrs {
   ownerId: UserId;
   tags?: string[];
   status?: "active" | "archived";
+  priority?: "A" | "B" | "C";
+  budget?: number;
+  taskStatus?: "todo" | "doing" | "done";
 }
 
 export interface NodeAcl {
@@ -44,6 +49,7 @@ export interface NodeAcl {
   contentEditableRoles?: UserRole[];
   childAddableRoles?: UserRole[];
   deletableRoles?: UserRole[];
+  attributeEditableRoles?: UserRole[];
   advancedPermissions?: NodeAdvancedPermissions;
   allowedUsers: UserId[];
   deniedUsers: UserId[];
@@ -82,7 +88,9 @@ export type FullDocOperation =
   | RenameNodeOperation
   | UpdateContentOperation
   | UpdateAttrsOperation
-  | UpdateAclOperation;
+  | UpdateAclOperation
+  | ResurrectNodeOperation
+  | ResurrectNodeKeepChildrenOperation;
 
 export interface AddNodeOperation {
   type: "addNode";
@@ -139,6 +147,25 @@ export interface UpdateAclOperation {
   timestamp?: number;
 }
 
+export interface ResurrectNodeOperation {
+  type: "resurrectNode";
+  nodeId: NodeId;
+  subtreeNodes: TreeNodeSnapshot[];
+  actorId: UserId;
+  timestamp?: number;
+}
+
+export interface ResurrectNodeKeepChildrenOperation {
+  type: "resurrectNodeKeepChildren";
+  nodeId: NodeId;
+  nodeSnapshot: TreeNodeSnapshot;
+  previousParentId: NodeId | null;
+  childIds: NodeId[];
+  previousIndex: number;
+  actorId: UserId;
+  timestamp?: number;
+}
+
 export interface UserView {
   userId: UserId;
   docId: string;
@@ -160,6 +187,7 @@ export interface ViewNode {
     | "contentEditableRoles"
     | "childAddableRoles"
     | "deletableRoles"
+    | "attributeEditableRoles"
     | "advancedPermissions"
   >;
   children: ViewNode[];
@@ -172,6 +200,9 @@ export interface ViewPermissions {
   canRename: boolean;
   canEditContent: boolean;
   canEditAttrs: boolean;
+  canEditPriority: boolean;
+  canEditBudget: boolean;
+  canEditTaskStatus: boolean;
   canEditAcl: boolean;
 }
 
@@ -188,8 +219,10 @@ export interface ViewAddNodeOperation {
   type: "addNode";
   parentId: NodeId;
   nodeId?: NodeId;
+  nodeType?: NodeType;
   title: string;
   content?: string;
+  attrs?: Partial<NodeAttrs>;
   index?: number;
 }
 
@@ -232,6 +265,7 @@ export interface ViewUpdateAclOperation {
     | "contentEditableRoles"
     | "childAddableRoles"
     | "deletableRoles"
+    | "attributeEditableRoles"
     | "advancedPermissions"
   >;
 }
