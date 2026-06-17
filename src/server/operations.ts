@@ -4,11 +4,12 @@ import { getNodeSnapshot } from "../crdt/snapshot";
 import { encodeStateVector } from "../crdt/state-vector";
 import { getView, putOperation } from "../view/transform";
 import { analyzeDeleteImpact, canResolveDeleteConflict } from "./delete-impact";
-import { AccessControlError, type User, type UserView, type ViewOperation, type ViewOperationEnvelope } from "../types";
+import { AccessControlError, type FullDocOperation, type User, type UserView, type ViewOperation, type ViewOperationEnvelope } from "../types";
 import type {
   BatchViewOperationEnvelope,
   CollaborationContext,
-  RejectedOperationResult
+  RejectedOperationResult,
+  UndoEntry
 } from "./types";
 
 export interface ApplyViewOperationInput {
@@ -61,6 +62,10 @@ export function applyViewOperationRequest(
     now: context.now(),
     policyEngine: context.policyEngine
   });
+
+  // Track for undo BEFORE applying (so capturedState reflects pre-operation state)
+  context.undoManager.track(input.user.id, fullOperation, context);
+
   applyFullDocOperation(context.crdt, fullOperation);
 
   if (operationId) {
@@ -272,3 +277,271 @@ function classifyErrorCode(error: Error): string {
 
   return "UNKNOWN_ERROR";
 }
+
+// ── Undo/Redo ──
+
+export interface ApplyUndoRedoResult {
+  view: UserView;
+  stateVector: string;
+  entryId: string;
+  operationType: string;
+  originalOpType: string;
+  nodeId?: string;
+}
+
+export function applyUndoRequest(
+  context: CollaborationContext,
+  user: User
+): ApplyUndoRedoResult {
+  const entry = context.undoManager.peekUndo(user.id);
+  if (!entry) {
+    throw new Error("Nothing to undo.");
+  }
+
+  preflightUndoOperation(context, user, entry);
+
+  // Pop from undo stack (pushes onto redo stack)
+  context.undoManager.popUndo(user.id);
+
+  // Apply the inverse operation via the normal CRDT pipeline
+  applyFullDocOperation(context.crdt, entry.inverseOp);
+
+  return {
+    view: getView(context.crdt, user, {
+      now: context.now(),
+      policyEngine: context.policyEngine
+    }),
+    stateVector: encodeStateVector(context.crdt),
+    entryId: entry.id,
+    operationType: entry.inverseOp.type,
+    originalOpType: entry.originalOp.type,
+    nodeId: extractNodeId(entry.originalOp)
+  };
+}
+
+export function applyRedoRequest(
+  context: CollaborationContext,
+  user: User
+): ApplyUndoRedoResult {
+  const entry = context.undoManager.peekRedo(user.id);
+  if (!entry) {
+    throw new Error("Nothing to redo.");
+  }
+
+  // For redo, we re-apply the ORIGINAL operation, which was stored in the redo stack.
+  // But we need to validate that it's still permissible.
+  preflightRedoOperation(context, user, entry);
+
+  // Pop from redo stack (pushes back onto undo stack)
+  context.undoManager.popRedo(user.id);
+
+  // Re-apply the original operation
+  applyFullDocOperation(context.crdt, entry.originalOp);
+
+  return {
+    view: getView(context.crdt, user, {
+      now: context.now(),
+      policyEngine: context.policyEngine
+    }),
+    stateVector: encodeStateVector(context.crdt),
+    entryId: entry.id,
+    operationType: entry.originalOp.type,
+    originalOpType: entry.originalOp.type,
+    nodeId: extractNodeId(entry.originalOp)
+  };
+}
+
+function extractNodeId(operation: FullDocOperation): string | undefined {
+  if ("nodeId" in operation && typeof (operation as { nodeId?: unknown }).nodeId === "string") {
+    return (operation as { nodeId: string }).nodeId;
+  }
+  if (operation.type === "addNode" && "node" in operation) {
+    return (operation as { node: { id: string } }).node.id;
+  }
+  return undefined;
+}
+
+function preflightUndoOperation(
+  context: CollaborationContext,
+  user: User,
+  undoEntry: UndoEntry
+): void {
+  // Only the original actor can undo their own operations
+  if (user.id !== undoEntry.actorId) {
+    throw new AccessControlError(
+      "Only the original actor can undo their own operations."
+    );
+  }
+
+  const captured = undoEntry.capturedState;
+  const inverseOp = undoEntry.inverseOp;
+
+  switch (inverseOp.type) {
+    case "deleteNode": {
+      // Undo of addNode → delete the created node
+      // Check: user can still view and delete the target node
+      const target = getNodeSnapshot(context.crdt, inverseOp.nodeId);
+      if (!target) {
+        // Node already deleted (possibly cascaded by parent deletion) — skip
+        throw new AccessControlError(
+          `Cannot undo: node ${inverseOp.nodeId} no longer exists.`
+        );
+      }
+      if (!context.policyEngine.canViewNode(user, target)) {
+        throw new AccessControlError(
+          `Cannot undo: target node is no longer visible to you.`
+        );
+      }
+      if (!context.policyEngine.canEditNode(user, target, "deleteNode")) {
+        throw new AccessControlError(
+          `Cannot undo: you no longer have permission to delete this node.`
+        );
+      }
+      return;
+    }
+
+    case "resurrectNode":
+    case "resurrectNodeKeepChildren": {
+      // Undo of deleteNode → resurrect from tombstone
+      // Check: parent node (if any) still exists and is visible
+      let parentId: string | null = null;
+      if (captured.kind === "deleteNode") {
+        parentId = captured.previousParentId;
+      } else if (captured.kind === "deleteNodeKeepChildren") {
+        parentId = captured.previousParentId;
+      }
+
+      if (parentId !== null) {
+        const parent = getNodeSnapshot(context.crdt, parentId);
+        if (!parent) {
+          throw new AccessControlError(
+            `Cannot undo delete: parent node ${parentId} no longer exists.`
+          );
+        }
+        if (!context.policyEngine.canViewNode(user, parent)) {
+          throw new AccessControlError(
+            `Cannot undo delete: parent node is no longer visible to you.`
+          );
+        }
+      }
+
+      // Verify the tombstone still exists
+      if (!context.crdt.tombstones.has(captured.kind === "deleteNode" ? captured.nodeId : captured.nodeId)) {
+        throw new AccessControlError(
+          `Cannot undo delete: the deleted node is no longer in tombstone storage.`
+        );
+      }
+      return;
+    }
+
+    case "renameNode":
+    case "updateContent":
+    case "updateAttrs":
+    case "updateAcl": {
+      // Undo of a mutation operation
+      // Check: target node still exists and is visible
+      const target = getNodeSnapshot(context.crdt, inverseOp.nodeId);
+      if (!target) {
+        throw new AccessControlError(
+          `Cannot undo: target node no longer exists.`
+        );
+      }
+      if (!context.policyEngine.canViewNode(user, target)) {
+        throw new AccessControlError(
+          `Cannot undo: target node is no longer visible to you.`
+        );
+      }
+      // Allow undo even if edit permission changed — user is reverting own action
+      return;
+    }
+
+    default:
+      throw new AccessControlError(
+        `Unsupported undo operation type: ${(inverseOp as { type: string }).type}`
+      );
+  }
+}
+
+function preflightRedoOperation(
+  context: CollaborationContext,
+  user: User,
+  redoEntry: UndoEntry
+): void {
+  // Only the original actor can redo
+  if (user.id !== redoEntry.actorId) {
+    throw new AccessControlError(
+      "Only the original actor can redo their own operations."
+    );
+  }
+
+  const originalOp = redoEntry.originalOp;
+
+  // Re-validate using the standard preflight for the original operation type
+  switch (originalOp.type) {
+    case "addNode": {
+      // Re-applying addNode — check parent still exists, visible, and user can add
+      const parent = getNodeSnapshot(context.crdt, originalOp.parentId!);
+      if (!parent) {
+        throw new AccessControlError(
+          `Cannot redo: parent node no longer exists.`
+        );
+      }
+      if (!context.policyEngine.canViewNode(user, parent)) {
+        throw new AccessControlError(
+          `Cannot redo: parent node is no longer visible.`
+        );
+      }
+      if (!context.policyEngine.canEditNode(user, parent, "addNode")) {
+        throw new AccessControlError(
+          `Cannot redo: no longer have permission to add children.`
+        );
+      }
+      return;
+    }
+
+    case "deleteNode": {
+      const target = getNodeSnapshot(context.crdt, originalOp.nodeId);
+      if (!target) {
+        throw new AccessControlError(
+          `Cannot redo: target node no longer exists.`
+        );
+      }
+      if (!context.policyEngine.canViewNode(user, target)) {
+        throw new AccessControlError(
+          `Cannot redo: target node is no longer visible.`
+        );
+      }
+      if (!context.policyEngine.canEditNode(user, target, "deleteNode")) {
+        throw new AccessControlError(
+          `Cannot redo: no longer have permission to delete.`
+        );
+      }
+      return;
+    }
+
+    case "deleteNodeKeepChildren":
+    case "renameNode":
+    case "updateContent":
+    case "updateAttrs":
+    case "updateAcl": {
+      const target = getNodeSnapshot(context.crdt, originalOp.nodeId);
+      if (!target) {
+        throw new AccessControlError(
+          `Cannot redo: target node no longer exists.`
+        );
+      }
+      if (!context.policyEngine.canViewNode(user, target)) {
+        throw new AccessControlError(
+          `Cannot redo: target node is no longer visible.`
+        );
+      }
+      return;
+    }
+
+    default:
+      throw new AccessControlError(
+        `Unsupported redo operation type: ${(originalOp as { type: string }).type}`
+      );
+  }
+}
+

@@ -3,6 +3,11 @@ import type { WebSocketServer } from "ws";
 import type { PolicyEngine } from "../access-control/policy-engine";
 import type { CrdtDocument } from "../crdt/document";
 import type {
+  FullDocOperation,
+  NodeAcl,
+  NodeAttrs,
+  NodeId,
+  TreeNodeSnapshot,
   User,
   UserId,
   UserRole,
@@ -12,6 +17,7 @@ import type {
 } from "../types";
 import type { DeleteImpactResult } from "./delete-impact";
 import type { SqliteDocumentStore } from "./persistence";
+import type { ServerUndoManager } from "./undo";
 
 export interface CollaborationServerOptions {
   crdt: CrdtDocument;
@@ -37,6 +43,7 @@ export interface CollaborationContext {
   policyVersion: number;
   policyEngine: PolicyEngine;
   accountStore?: Pick<SqliteDocumentStore, "saveUserAccount" | "deleteUserAccount">;
+  undoManager: ServerUndoManager;
 }
 
 export interface SessionInfo {
@@ -73,10 +80,85 @@ export interface UpdateUserRequestBody {
   department?: string;
 }
 
+export interface UpdateProfileRequestBody {
+  name?: string;
+  currentPassword?: string;
+  newPassword?: string;
+}
+
 export interface OperationRequestBody {
   userId?: UserId;
   operation?: ViewOperation;
   envelope?: ViewOperationEnvelope;
+}
+
+// ── Undo/Redo types ──
+
+export interface UndoEntry {
+  id: string;
+  actorId: UserId;
+  timestamp: number;
+  operationType: FullDocOperation["type"];
+  originalOp: FullDocOperation;
+  inverseOp: FullDocOperation;
+  capturedState: UndoCapturedState;
+  sequenceNumber: number;
+}
+
+export type UndoCapturedState =
+  | UndoCaptureAddNode
+  | UndoCaptureDeleteNode
+  | UndoCaptureDeleteNodeKeepChildren
+  | UndoCaptureRenameNode
+  | UndoCaptureUpdateContent
+  | UndoCaptureUpdateAttrs
+  | UndoCaptureUpdateAcl;
+
+export interface UndoCaptureAddNode {
+  kind: "addNode";
+  nodeId: NodeId;
+  parentId: NodeId | null;
+  nodeSnapshot: TreeNodeSnapshot;
+}
+
+export interface UndoCaptureDeleteNode {
+  kind: "deleteNode";
+  nodeId: NodeId;
+  previousParentId: NodeId | null;
+  subtreeSnapshots: TreeNodeSnapshot[];
+}
+
+export interface UndoCaptureDeleteNodeKeepChildren {
+  kind: "deleteNodeKeepChildren";
+  nodeId: NodeId;
+  previousParentId: NodeId | null;
+  previousChildIds: NodeId[];
+  previousIndex: number;
+  nodeSnapshot: TreeNodeSnapshot;
+}
+
+export interface UndoCaptureRenameNode {
+  kind: "renameNode";
+  nodeId: NodeId;
+  previousTitle: string;
+}
+
+export interface UndoCaptureUpdateContent {
+  kind: "updateContent";
+  nodeId: NodeId;
+  previousContent: string;
+}
+
+export interface UndoCaptureUpdateAttrs {
+  kind: "updateAttrs";
+  nodeId: NodeId;
+  previousValues: Partial<NodeAttrs>;
+}
+
+export interface UndoCaptureUpdateAcl {
+  kind: "updateAcl";
+  nodeId: NodeId;
+  previousValues: Partial<NodeAcl>;
 }
 
 export type BatchViewOperationEnvelope = Omit<ViewOperationEnvelope, "userId"> & {
@@ -143,6 +225,18 @@ export interface UserAccount {
   createdAt: number;
 }
 
+export interface AwarenessUserState {
+  userId: string;
+  userName: string;
+  color: string;
+  nodeId?: string;
+  lastSeen: number;
+}
+
+export interface ClientAwarenessState {
+  nodeId?: string | null;
+}
+
 export type ClientMessage =
   | {
       type: "operation";
@@ -153,7 +247,20 @@ export type ClientMessage =
       envelope: ViewOperationEnvelope;
     }
   | {
+      type: "undo";
+    }
+  | {
+      type: "redo";
+    }
+  | {
+      type: "undoStatus";
+    }
+  | {
       type: "ping";
+    }
+  | {
+      type: "awareness";
+      awareness: ClientAwarenessState;
     };
 
 export interface ChangeInfo {
@@ -182,6 +289,35 @@ export type ServerMessage =
       change?: ChangeInfo;
     }
   | {
+      type: "undoApplied";
+      view: UserView;
+      stateVector: string;
+      policyVersion: number;
+      undoneEntryId: string;
+      inverseOperationType: string;
+      originalOpType: string;
+      nodeId?: string;
+      change?: ChangeInfo;
+    }
+  | {
+      type: "redoApplied";
+      view: UserView;
+      stateVector: string;
+      policyVersion: number;
+      redoneEntryId: string;
+      redoOperationType: string;
+      originalOpType: string;
+      nodeId?: string;
+      change?: ChangeInfo;
+    }
+  | {
+      type: "undoStatus";
+      canUndo: boolean;
+      canRedo: boolean;
+      undoCount: number;
+      redoCount: number;
+    }
+  | {
       type: "error";
       error: {
         name: string;
@@ -190,4 +326,8 @@ export type ServerMessage =
     }
   | {
       type: "pong";
+    }
+  | {
+      type: "awareness";
+      states: AwarenessUserState[];
     };

@@ -86,7 +86,7 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
     parentId: "node-root",
     node: createNode({
       id: "node-public",
-      type: "doc",
+      type: "task",
       title: "项目公告模块",
       content: "所有用户可见的公告、培训和汇报工作包。",
       department: "all",
@@ -97,6 +97,11 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
       contentEditableRoles: ["admin", "manager"],
       childAddableRoles: ["admin", "manager"],
       deletableRoles: ["admin"],
+      attrsPatch: {
+        priority: "A",
+        budget: 3000,
+        taskStatus: "doing"
+      },
       createdBy: "u-admin"
     }),
     actorId: "u-admin",
@@ -110,7 +115,7 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
     parentId: "node-root",
     node: createNode({
       id: "node-dev-plan",
-      type: "doc",
+      type: "task",
       title: "权限与隐私模块",
       content: "研发部门权限、隐私视图和离线协同相关工作包。",
       department: "dev",
@@ -122,6 +127,11 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
       childAddableRoles: ["admin", "manager"],
       deletableRoles: ["admin"],
       allowedUsers: ["u-dev-manager"],
+      attrsPatch: {
+        priority: "A",
+        budget: 24000,
+        taskStatus: "doing"
+      },
       createdBy: "u-dev-manager"
     }),
     actorId: "u-admin",
@@ -223,7 +233,7 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
     parentId: "node-root",
     node: createNode({
       id: "node-dev-requirements",
-      type: "doc",
+      type: "task",
       title: "需求管理模块",
       content: "研发组功能需求、接口规格和评审工作包。",
       department: "dev",
@@ -234,6 +244,11 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
       contentEditableRoles: ["admin", "manager", "member"],
       childAddableRoles: ["admin", "manager", "member"],
       deletableRoles: ["admin", "manager"],
+      attrsPatch: {
+        priority: "A",
+        budget: 6300,
+        taskStatus: "doing"
+      },
       createdBy: "u-dev-manager"
     }),
     actorId: "u-admin",
@@ -246,7 +261,7 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
     parentId: "node-root",
     node: createNode({
       id: "node-frontend-module",
-      type: "doc",
+      type: "task",
       title: "前端交互模块",
       content: "树形编辑、操作日志和用户交互相关工作包。",
       department: "dev",
@@ -257,6 +272,11 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
       contentEditableRoles: ["admin", "manager", "member"],
       childAddableRoles: ["admin", "manager", "member"],
       deletableRoles: ["admin", "manager"],
+      attrsPatch: {
+        priority: "B",
+        budget: 4500,
+        taskStatus: "doing"
+      },
       createdBy: "u-dev-manager"
     }),
     actorId: "u-admin",
@@ -315,7 +335,7 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
     parentId: "node-root",
     node: createNode({
       id: "node-finance",
-      type: "doc",
+      type: "task",
       title: "预算审批模块",
       content: "管理员可见的预算审批和成本复核工作包。",
       department: "finance",
@@ -327,6 +347,11 @@ export function createSampleDocument(now = 1_700_000_000_000): CrdtDocument {
       childAddableRoles: ["admin"],
       deletableRoles: ["admin"],
       allowedUsers: ["u-finance"],
+      attrsPatch: {
+        priority: "A",
+        budget: 14000,
+        taskStatus: "todo"
+      },
       createdBy: "u-admin"
     }),
     actorId: "u-admin",
@@ -417,7 +442,7 @@ function addPublicModule(crdt: CrdtDocument, now: number): void {
     parentId: "node-root",
     node: createNode({
       id: "node-public",
-      type: "doc",
+      type: "task",
       title: "项目公告模块",
       content: "所有用户可见的公告、培训和汇报工作包。",
       department: "all",
@@ -428,6 +453,11 @@ function addPublicModule(crdt: CrdtDocument, now: number): void {
       contentEditableRoles: ["admin", "manager"],
       childAddableRoles: ["admin", "manager"],
       deletableRoles: ["admin"],
+      attrsPatch: {
+        priority: "A",
+        budget: 3000,
+        taskStatus: "doing"
+      },
       createdBy: "u-admin"
     }),
     actorId: "u-admin",
@@ -441,7 +471,7 @@ function addDevPlanModule(crdt: CrdtDocument, now: number): void {
     parentId: "node-root",
     node: createNode({
       id: "node-dev-plan",
-      type: "doc",
+      type: "task",
       title: "权限与隐私模块",
       content: "研发部门权限、隐私视图和离线协同相关工作包。",
       department: "dev",
@@ -453,6 +483,11 @@ function addDevPlanModule(crdt: CrdtDocument, now: number): void {
       childAddableRoles: ["admin", "manager"],
       deletableRoles: ["admin"],
       allowedUsers: ["u-dev-manager"],
+      attrsPatch: {
+        priority: "A",
+        budget: 24000,
+        taskStatus: "doing"
+      },
       createdBy: "u-dev-manager"
     }),
     actorId: "u-admin",
@@ -466,7 +501,7 @@ function addRequirementModule(crdt: CrdtDocument, now: number): void {
     parentId: "node-root",
     node: createNode({
       id: "node-dev-requirements",
-      type: "doc",
+      type: "task",
       title: "需求管理模块",
       content: "研发组功能需求、接口规格和评审工作包。",
       department: "dev",
@@ -477,6 +512,11 @@ function addRequirementModule(crdt: CrdtDocument, now: number): void {
       contentEditableRoles: ["admin", "manager", "member"],
       childAddableRoles: ["admin", "manager", "member"],
       deletableRoles: ["admin", "manager"],
+      attrsPatch: {
+        priority: "A",
+        budget: 6300,
+        taskStatus: "doing"
+      },
       createdBy: "u-dev-manager"
     }),
     actorId: "u-admin",
@@ -490,7 +530,7 @@ function addFinanceModule(crdt: CrdtDocument, now: number): void {
     parentId: "node-root",
     node: createNode({
       id: "node-finance",
-      type: "doc",
+      type: "task",
       title: "预算审批模块",
       content: "管理员可见的预算审批和成本复核工作包。",
       department: "finance",
@@ -502,6 +542,11 @@ function addFinanceModule(crdt: CrdtDocument, now: number): void {
       childAddableRoles: ["admin"],
       deletableRoles: ["admin"],
       allowedUsers: ["u-finance"],
+      attrsPatch: {
+        priority: "A",
+        budget: 14000,
+        taskStatus: "todo"
+      },
       createdBy: "u-admin"
     }),
     actorId: "u-admin",
@@ -736,7 +781,7 @@ function addFrontendModuleSamples(crdt: CrdtDocument, now: number): void {
     parentId: "node-root",
     node: createNode({
       id: "node-frontend-module",
-      type: "doc",
+      type: "task",
       title: "前端交互模块",
       content: "树形编辑、操作日志和用户交互相关工作包。",
       department: "dev",
@@ -747,6 +792,11 @@ function addFrontendModuleSamples(crdt: CrdtDocument, now: number): void {
       contentEditableRoles: ["admin", "manager", "member"],
       childAddableRoles: ["admin", "manager", "member"],
       deletableRoles: ["admin", "manager"],
+      attrsPatch: {
+        priority: "B",
+        budget: 4500,
+        taskStatus: "doing"
+      },
       createdBy: "u-dev-manager"
     }),
     actorId: "u-admin",
@@ -822,6 +872,7 @@ interface CreateNodeInput {
   contentEditableRoles?: NewTreeNode["acl"]["contentEditableRoles"];
   childAddableRoles?: NewTreeNode["acl"]["childAddableRoles"];
   deletableRoles?: NewTreeNode["acl"]["deletableRoles"];
+  attributeEditableRoles?: NewTreeNode["acl"]["attributeEditableRoles"];
   allowedUsers?: string[];
   deniedUsers?: string[];
   attrsPatch?: Partial<NewTreeNode["attrs"]>;
@@ -839,6 +890,9 @@ function createNode(input: CreateNodeInput): NewTreeNode {
       ownerId: input.ownerId,
       tags: [],
       status: "active",
+      priority: "C",
+      budget: 0,
+      taskStatus: "todo",
       ...input.attrsPatch
     },
     acl: {
@@ -848,6 +902,7 @@ function createNode(input: CreateNodeInput): NewTreeNode {
       contentEditableRoles: input.contentEditableRoles ?? input.editableRoles,
       childAddableRoles: input.childAddableRoles ?? input.editableRoles,
       deletableRoles: input.deletableRoles ?? input.editableRoles,
+      attributeEditableRoles: input.attributeEditableRoles ?? input.editableRoles,
       allowedUsers: input.allowedUsers ?? [],
       deniedUsers: input.deniedUsers ?? []
     },

@@ -9,6 +9,7 @@ import { encodeStateVector } from "../src/crdt/state-vector";
 import { createSampleDocument, sampleUsers } from "../src/fixtures/sample";
 import { applyBatchViewOperationRequest } from "../src/server/operations";
 import type { CollaborationContext } from "../src/server/types";
+import { ServerUndoManager } from "../src/server/undo";
 import { getView, putOperation } from "../src/view/transform";
 import type { UpdateAclOperation, User, ViewNode } from "../src/types";
 
@@ -192,7 +193,8 @@ describe("concurrent heterogeneous view sync", () => {
       processedOperationIds: new Set(),
       sessions: new Map(),
       policyVersion: 1,
-      policyEngine: defaultPolicyEngine
+      policyEngine: defaultPolicyEngine,
+      undoManager: new ServerUndoManager()
     };
     const baseStateVector = encodeStateVector(crdt);
 
@@ -244,7 +246,8 @@ describe("concurrent heterogeneous view sync", () => {
       processedOperationIds: new Set(),
       sessions: new Map(),
       policyVersion: 1,
-      policyEngine: defaultPolicyEngine
+      policyEngine: defaultPolicyEngine,
+      undoManager: new ServerUndoManager()
     };
     const baseStateVector = encodeStateVector(crdt);
 
@@ -308,7 +311,8 @@ describe("concurrent heterogeneous view sync", () => {
       processedOperationIds: new Set(),
       sessions: new Map(),
       policyVersion: 1,
-      policyEngine: defaultPolicyEngine
+      policyEngine: defaultPolicyEngine,
+      undoManager: new ServerUndoManager()
     };
 
     applyFullDocOperation(

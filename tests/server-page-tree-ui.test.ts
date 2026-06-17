@@ -26,6 +26,9 @@ describe("home page hybrid tree UI", () => {
 
     expect(html).toContain("taskFilters");
     expect(html).toContain("appendModuleFilterPanel");
+    expect(html).toContain("return depth === 1");
+    expect(html).toContain("function canAddChildAtDepth(depth)");
+    expect(html).toContain("当前只支持三级结构，第三级节点不能再添加子节点");
     expect(html).toContain("当前模块任务筛选");
     expect(html).toContain("预算总额");
     expect(html).toContain("appendTaskAttrsPanel");

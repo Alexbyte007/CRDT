@@ -72,7 +72,7 @@ export class PolicyEngine {
       case "deleteNodeKeepChildren":
         return acl.deletableRoles ?? acl.editableRoles;
       case "updateAttrs":
-        return acl.editableRoles;
+        return mergeRoleLists(acl.attributeEditableRoles, acl.editableRoles);
       case "updateAcl":
         return ["admin"];
       default:
@@ -81,6 +81,13 @@ export class PolicyEngine {
   }
 
   canEditAttr(user: User, node: TreeNodeSnapshot, attr: keyof NodeAttrs, value?: unknown): boolean {
+    if ((attr === "priority" || attr === "budget") && user.role !== "admin") {
+      const roles = node.acl.attributeEditableRoles ?? node.acl.editableRoles;
+      if (!roles.includes(user.role)) {
+        return false;
+      }
+    }
+
     if (!this.canEditNode(user, node, "updateAttrs")) {
       return false;
     }
@@ -135,4 +142,17 @@ export class PolicyEngine {
 
     return true;
   }
+}
+
+function mergeRoleLists(
+  primary: UserRole[] | undefined,
+  fallback: UserRole[] | undefined
+): UserRole[] | undefined {
+  if (!primary) {
+    return fallback;
+  }
+  if (!fallback) {
+    return primary;
+  }
+  return Array.from(new Set([...primary, ...fallback]));
 }
