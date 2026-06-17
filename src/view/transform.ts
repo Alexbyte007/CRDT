@@ -34,7 +34,7 @@ export function getView(
   const roots: ViewNode[] = [];
 
   for (const rootId of snapshot.rootIds) {
-    roots.push(...projectNode(rootId, user, snapshot.nodes, policyEngine, null));
+    roots.push(...projectNode(rootId, user, snapshot.nodes, policyEngine, null, 0));
   }
 
   return {
@@ -60,6 +60,7 @@ export function validateViewOperation(
 
   switch (operation.type) {
     case "addNode":
+      ensureCanAddChildAtDepth(crdt, target);
       ensureCanEdit(user, target, "addNode", policyEngine);
       return;
     case "deleteNode":
@@ -77,6 +78,7 @@ export function validateViewOperation(
     case "updateAttrs": {
       ensureCanEdit(user, target, "updateAttrs", policyEngine);
       validateAttrsPatchShape(operation.attrsPatch);
+      ensureCanUpdateTaskAttrsAtDepth(crdt, target, operation.attrsPatch);
       const sanitized = policyEngine.sanitizeAttrsPatch(user, target, operation.attrsPatch);
       if (Object.keys(operation.attrsPatch).length > 0 && Object.keys(sanitized).length === 0) {
         throw new AccessControlError("No attrs in this patch are editable by the current user.");
@@ -139,6 +141,7 @@ export function putOperation(
     case "updateAttrs": {
       const node = requireSnapshot(crdt, operation.nodeId);
       validateAttrsPatchShape(operation.attrsPatch);
+      ensureCanUpdateTaskAttrsAtDepth(crdt, node, operation.attrsPatch);
       const attrsPatch = policyEngine.sanitizeAttrsPatch(user, node, operation.attrsPatch);
       return {
         type: "updateAttrs",
@@ -166,7 +169,8 @@ function projectNode(
   user: User,
   nodes: Record<NodeId, TreeNodeSnapshot>,
   policyEngine: PolicyEngine,
-  projectedParentId: NodeId | null
+  projectedParentId: NodeId | null,
+  depth: number
 ): ViewNode[] {
   const node = nodes[nodeId];
 
@@ -180,7 +184,8 @@ function projectNode(
     user,
     nodes,
     policyEngine,
-    canView ? node.id : projectedParentId
+    canView ? node.id : projectedParentId,
+    canView ? depth + 1 : depth
   );
 
   if (!canView) {
@@ -193,14 +198,14 @@ function projectNode(
     type: node.type,
     title: node.title,
     children,
-    permissions: buildViewPermissions(user, node, policyEngine)
+    permissions: buildViewPermissions(user, node, policyEngine, depth)
   };
 
   if (policyEngine.canViewField(user, node, "content")) {
     viewNode.content = node.content;
   }
 
-  const attrs = sanitizeNodeAttrs(user, node, policyEngine);
+  const attrs = sanitizeNodeAttrs(user, node, policyEngine, depth);
   if (Object.keys(attrs).length > 0) {
     viewNode.attrs = attrs;
   }
@@ -225,12 +230,13 @@ function projectChildren(
   user: User,
   nodes: Record<NodeId, TreeNodeSnapshot>,
   policyEngine: PolicyEngine,
-  projectedParentId: NodeId | null
+  projectedParentId: NodeId | null,
+  depth: number
 ): ViewNode[] {
   const children: ViewNode[] = [];
 
   for (const childId of node.children) {
-    children.push(...projectNode(childId, user, nodes, policyEngine, projectedParentId));
+    children.push(...projectNode(childId, user, nodes, policyEngine, projectedParentId, depth));
   }
 
   return children;
@@ -239,11 +245,15 @@ function projectChildren(
 function sanitizeNodeAttrs(
   user: User,
   node: TreeNodeSnapshot,
-  policyEngine: PolicyEngine
+  policyEngine: PolicyEngine,
+  depth: number
 ): Partial<NodeAttrs> {
   const attrs: Partial<NodeAttrs> = {};
 
   for (const key of Object.keys(node.attrs) as Array<keyof NodeAttrs>) {
+    if (depth < 2 && isTaskOnlyAttr(key)) {
+      continue;
+    }
     if (policyEngine.canViewField(user, node, `attrs.${key}`)) {
       Object.assign(attrs, { [key]: node.attrs[key] });
     }
@@ -255,19 +265,24 @@ function sanitizeNodeAttrs(
 function buildViewPermissions(
   user: User,
   node: TreeNodeSnapshot,
-  policyEngine: PolicyEngine
+  policyEngine: PolicyEngine,
+  depth: number
 ): ViewPermissions {
   return {
-    canAddChild: policyEngine.canEditNode(user, node, "addNode"),
+    canAddChild: depth < 2 && policyEngine.canEditNode(user, node, "addNode"),
     canDelete: policyEngine.canEditNode(user, node, "deleteNode"),
     canRename: policyEngine.canEditNode(user, node, "renameNode"),
     canEditContent: policyEngine.canEditNode(user, node, "updateContent"),
-    canEditAttrs: policyEngine.canEditNode(user, node, "updateAttrs"),
-    canEditPriority: policyEngine.canEditAttr(user, node, "priority"),
-    canEditBudget: policyEngine.canEditAttr(user, node, "budget"),
-    canEditTaskStatus: policyEngine.canEditAttr(user, node, "taskStatus"),
+    canEditAttrs: depth >= 2 && policyEngine.canEditNode(user, node, "updateAttrs"),
+    canEditPriority: depth >= 2 && policyEngine.canEditAttr(user, node, "priority"),
+    canEditBudget: depth >= 2 && policyEngine.canEditAttr(user, node, "budget"),
+    canEditTaskStatus: depth >= 2 && policyEngine.canEditAttr(user, node, "taskStatus"),
     canEditAcl: policyEngine.canEditNode(user, node, "updateAcl")
   };
+}
+
+function isTaskOnlyAttr(attr: keyof NodeAttrs): boolean {
+  return attr === "priority" || attr === "budget" || attr === "taskStatus";
 }
 
 function sanitizeAclPatch(
@@ -406,23 +421,35 @@ function buildFullAddNodeOperation(
   policyEngine: PolicyEngine
 ): AddNodeOperation {
   const parent = requireSnapshot(crdt, operation.parentId);
+  ensureCanAddChildAtDepth(crdt, parent);
   const defaults = policyEngine.getAddNodeDefaults();
   const creatorAndHigherRoles = rolesAtOrAbove(user.role);
+  const parentDepth = getNodeDepth(crdt, parent);
+  const childType = parentDepth === 0 ? "folder" : "task";
   const node: NewTreeNode = {
     id: operation.nodeId ?? createNodeId(user.id, timestamp),
-    type: "task",
+    type: childType,
     title: operation.title,
     content: operation.content ?? "",
-    attrs: {
-      department: resolveDepartmentDefault(defaults.department, parent),
-      ownerId: resolveOwnerDefault(defaults.ownerId, user),
-      tags: [],
-      status: defaults.status,
-      priority: "C",
-      budget: 0,
-      taskStatus: "todo",
-      ...sanitizeNewNodeAttrs(operation.attrs)
-    },
+    attrs:
+      childType === "task"
+        ? {
+            department: resolveDepartmentDefault(defaults.department, parent),
+            ownerId: resolveOwnerDefault(defaults.ownerId, user),
+            tags: [],
+            status: defaults.status,
+            priority: "C",
+            budget: 0,
+            taskStatus: "todo",
+            ...sanitizeNewNodeAttrs(operation.attrs, true)
+          }
+        : {
+            department: resolveDepartmentDefault(defaults.department, parent),
+            ownerId: resolveOwnerDefault(defaults.ownerId, user),
+            tags: [],
+            status: defaults.status,
+            ...sanitizeNewNodeAttrs(operation.attrs, false)
+          },
     acl: {
       visibility: resolveVisibilityDefault(defaults.visibility, parent),
       allowedRoles: resolveVisibleRoleListDefault(defaults.allowedRoles, parent.acl.allowedRoles),
@@ -463,6 +490,51 @@ function buildFullAddNodeOperation(
   };
 }
 
+function ensureCanAddChildAtDepth(crdt: CrdtDocument, parent: TreeNodeSnapshot): void {
+  const parentDepth = getNodeDepth(crdt, parent);
+  if (parentDepth >= 2) {
+    throw new AccessControlError(
+      `Cannot add child under node ${parent.id}: the editor supports at most three levels.`
+    );
+  }
+}
+
+function getNodeDepth(crdt: CrdtDocument, node: TreeNodeSnapshot): number {
+  let depth = 0;
+  let current = node;
+  const visited = new Set<NodeId>();
+
+  while (current.parentId !== null) {
+    if (visited.has(current.id)) {
+      throw new AccessControlError(`Cannot determine node depth because node ${current.id} is in a cycle.`);
+    }
+    visited.add(current.id);
+    const parent = getNodeSnapshot(crdt, current.parentId);
+    if (!parent) {
+      throw new AccessControlError(`Cannot determine node depth because parent ${current.parentId} is missing.`);
+    }
+    depth += 1;
+    current = parent;
+  }
+
+  return depth;
+}
+
+function ensureCanUpdateTaskAttrsAtDepth(
+  crdt: CrdtDocument,
+  node: TreeNodeSnapshot,
+  attrsPatch: Partial<NodeAttrs>
+): void {
+  if (!Object.keys(attrsPatch).some((key) => isTaskOnlyAttr(key as keyof NodeAttrs))) {
+    return;
+  }
+  if (getNodeDepth(crdt, node) < 2) {
+    throw new AccessControlError(
+      `Cannot update task-only attrs on node ${node.id}: priority, budget, and taskStatus are only available on third-level task nodes.`
+    );
+  }
+}
+
 function validateAttrsPatchShape(attrsPatch: Partial<NodeAttrs>): void {
   if (attrsPatch.priority !== undefined && !["A", "B", "C"].includes(attrsPatch.priority)) {
     throw new AccessControlError(`Unsupported task priority: ${attrsPatch.priority}`);
@@ -475,11 +547,17 @@ function validateAttrsPatchShape(attrsPatch: Partial<NodeAttrs>): void {
   }
 }
 
-function sanitizeNewNodeAttrs(attrs: Partial<NodeAttrs> | undefined): Partial<NodeAttrs> {
+function sanitizeNewNodeAttrs(
+  attrs: Partial<NodeAttrs> | undefined,
+  allowTaskAttrs: boolean
+): Partial<NodeAttrs> {
   if (!attrs) {
     return {};
   }
   validateAttrsPatchShape(attrs);
+  if (!allowTaskAttrs) {
+    return {};
+  }
   const result: Partial<NodeAttrs> = {};
   for (const key of ["priority", "budget", "taskStatus"] as const) {
     if (attrs[key] !== undefined) {

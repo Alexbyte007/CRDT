@@ -2200,7 +2200,11 @@ export function renderHomePage(): string {
       }
 
       function isModuleNode(node, depth) {
-        return depth === 1 && directTaskChildren(node).length > 0;
+        return depth === 1;
+      }
+
+      function canAddChildAtDepth(depth) {
+        return depth < 2;
       }
 
       function defaultTaskFilter() {
@@ -2245,7 +2249,7 @@ export function renderHomePage(): string {
         if (!isTaskFilterActive(filter)) {
           return moduleNode.children || [];
         }
-        return (moduleNode.children || []).filter((child) => !isTaskNode(child) || taskMatchesFilter(child, filter));
+        return (moduleNode.children || []).filter((child) => taskMatchesFilter(child, filter));
       }
 
       function taskStats(tasks) {
@@ -3548,20 +3552,26 @@ export function renderHomePage(): string {
               "节点删除权限已更新"
             )
           );
-          const attributePolicy = renderAclSelect("谁能改优先级/预算", audienceFromRoles(node.acl.attributeEditableRoles), (audience) =>
-            updateNodeAcl(
-              node.id,
-              { attributeEditableRoles: rolesFromAudience(audience) },
-              "任务属性修改权限已更新"
-            )
+          const taskAttributePolicy = depth >= 2
+            ? renderAclSelect("谁能改优先级/预算", audienceFromRoles(node.acl.attributeEditableRoles), (audience) =>
+                updateNodeAcl(
+                  node.id,
+                  { attributeEditableRoles: rolesFromAudience(audience) },
+                  "任务属性修改权限已更新"
+                )
+              )
+            : null;
+          const operationPolicies = [editPolicy, addPolicy, deletePolicy].concat(
+            taskAttributePolicy ? [taskAttributePolicy] : []
           );
-          const operationPolicies = [editPolicy, addPolicy, deletePolicy, attributePolicy];
           visibilityPolicy.select.onChangeHook = () =>
             syncOperationAclControls(visibilityPolicy.select, operationPolicies);
           syncOperationAclControls(visibilityPolicy.select, operationPolicies);
           policyPanel.appendChild(visibilityPolicy.element);
           policyPanel.appendChild(editPolicy.element);
-          policyPanel.appendChild(attributePolicy.element);
+          if (taskAttributePolicy) {
+            policyPanel.appendChild(taskAttributePolicy.element);
+          }
           policyPanel.appendChild(addPolicy.element);
           policyPanel.appendChild(deletePolicy.element);
           if (node.children && node.children.length > 0) {
@@ -3581,13 +3591,15 @@ export function renderHomePage(): string {
         }
 
         appendModuleFilterPanel(detailInner, node, depth);
-        appendTaskAttrsPanel(detailInner, node);
+        if (depth >= 2) {
+          appendTaskAttrsPanel(detailInner, node);
+        }
         appendMarkdownPreview(detailInner, node, draft);
 
         if (node.permissions.canAddChild || node.permissions.canDelete) {
           const actions = document.createElement("div");
           actions.className = "node-actions";
-          if (node.permissions.canAddChild) {
+          if (node.permissions.canAddChild && canAddChildAtDepth(depth)) {
             const addButton = document.createElement("button");
             addButton.type = "button";
             addButton.className = "btn small secondary";
@@ -4254,20 +4266,28 @@ export function renderHomePage(): string {
       }
 
       async function addChildNode(parentNode, depth) {
+        if (!canAddChildAtDepth(depth)) {
+          setStatus("当前只支持三级结构，第三级节点不能再添加子节点");
+          return;
+        }
         const result = await showAddNodeDialog(parentNode);
         if (!result) return; // user cancelled
 
+        const childDepth = depth + 1;
+        const isTaskChild = childDepth >= 2;
         await submitOperation({
           type: "addNode",
           parentId: parentNode.id,
-          nodeType: "task",
+          nodeType: isTaskChild ? "task" : "folder",
           title: result.title,
           content: "",
-          attrs: {
-            priority: "C",
-            budget: 0,
-            taskStatus: "todo"
-          },
+          attrs: isTaskChild
+            ? {
+                priority: "C",
+                budget: 0,
+                taskStatus: "todo"
+              }
+            : undefined,
           aclPatch: aclPatchFromAudience(result.audience)
         });
       }

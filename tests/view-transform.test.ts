@@ -87,12 +87,15 @@ describe("privacy view transform", () => {
     expect(devPlan).toBeDefined();
     expect(devPlan?.attrs).toEqual({
       department: "dev",
-      priority: "A",
       tags: [],
-      status: "active",
-      taskStatus: "doing"
+      status: "active"
     });
+    expect(devPlan?.attrs).not.toHaveProperty("priority");
     expect(devPlan?.attrs).not.toHaveProperty("budget");
+    expect(devPlan?.attrs).not.toHaveProperty("taskStatus");
+    expect(devPlan?.permissions.canEditPriority).toBe(false);
+    expect(devPlan?.permissions.canEditBudget).toBe(false);
+    expect(devPlan?.permissions.canEditTaskStatus).toBe(false);
     expect(JSON.stringify(devPlan)).not.toContain("allowedRoles");
     expect(JSON.stringify(devPlan)).not.toContain("editableRoles");
   });
@@ -259,19 +262,19 @@ describe("privacy view transform", () => {
     expect(memberNode?.permissions).toMatchObject({
       canRename: true,
       canEditContent: true,
-      canAddChild: true,
+      canAddChild: false,
       canDelete: true
     });
     expect(managerNode?.permissions).toMatchObject({
       canRename: true,
       canEditContent: true,
-      canAddChild: true,
+      canAddChild: false,
       canDelete: true
     });
     expect(adminNode?.permissions).toMatchObject({
       canRename: true,
       canEditContent: true,
-      canAddChild: true,
+      canAddChild: false,
       canDelete: true
     });
     expect(guestNode?.permissions).toMatchObject({
@@ -280,6 +283,39 @@ describe("privacy view transform", () => {
       canAddChild: false,
       canDelete: false
     });
+  });
+
+  it("creates first-level child nodes as modules without task-only attrs", () => {
+    const crdt = createSampleDocument();
+    const admin = user("u-admin");
+
+    const fullOperation = putOperation(
+      crdt,
+      admin,
+      {
+        type: "addNode",
+        parentId: "node-root",
+        nodeId: "node-new-module",
+        title: "新模块",
+        content: "一级节点"
+      },
+      { now: 24 }
+    );
+
+    if (fullOperation.type !== "addNode") {
+      throw new Error("Expected addNode operation.");
+    }
+
+    expect(fullOperation.node.type).toBe("folder");
+    expect(fullOperation.node.attrs).toMatchObject({
+      department: "all",
+      ownerId: "u-admin",
+      tags: [],
+      status: "active"
+    });
+    expect(fullOperation.node.attrs).not.toHaveProperty("priority");
+    expect(fullOperation.node.attrs).not.toHaveProperty("budget");
+    expect(fullOperation.node.attrs).not.toHaveProperty("taskStatus");
   });
 
   it("filters manager attr updates to allowed node attributes", () => {
@@ -322,6 +358,7 @@ describe("privacy view transform", () => {
     const adminTask = findViewNode(getView(crdt, admin, { now: 31 }).roots, "node-privacy-view-task");
     const managerTask = findViewNode(getView(crdt, manager, { now: 31 }).roots, "node-privacy-view-task");
     const memberTask = findViewNode(getView(crdt, member, { now: 31 }).roots, "node-privacy-view-task");
+    const managerModule = findViewNode(getView(crdt, manager, { now: 31 }).roots, "node-dev-plan");
 
     expect(adminTask?.attrs).toMatchObject({
       priority: "B",
@@ -338,6 +375,22 @@ describe("privacy view transform", () => {
       taskStatus: "todo"
     });
     expect(memberTask?.attrs).not.toHaveProperty("budget");
+    expect(managerModule?.attrs).not.toHaveProperty("priority");
+    expect(managerModule?.attrs).not.toHaveProperty("budget");
+    expect(managerModule?.attrs).not.toHaveProperty("taskStatus");
+    expect(managerModule?.permissions.canEditPriority).toBe(false);
+    expect(managerModule?.permissions.canEditBudget).toBe(false);
+    expect(managerModule?.permissions.canEditTaskStatus).toBe(false);
+
+    expect(() =>
+      validateViewOperation(crdt, manager, {
+        type: "updateAttrs",
+        nodeId: "node-dev-plan",
+        attrsPatch: {
+          priority: "A"
+        }
+      })
+    ).toThrow(AccessControlError);
 
     const memberStatusUpdate = putOperation(
       crdt,
@@ -706,19 +759,19 @@ describe("privacy view transform", () => {
       "普通用户在折叠视图中修改公开子文档。"
     );
 
-    const addOperation = putOperation(
-      crdt,
-      user("u-guest"),
-      {
-        type: "addNode",
-        parentId: "node-public-child",
-        nodeId: "node-public-grandchild",
-        title: "公开孙节点"
-      },
-      { now: 52 }
-    );
-    applyFullDocOperation(crdt, addOperation);
-    expect(getNodeSnapshot(crdt, "node-public-grandchild")?.parentId).toBe("node-public-child");
+    expect(() =>
+      putOperation(
+        crdt,
+        user("u-guest"),
+        {
+          type: "addNode",
+          parentId: "node-public-child",
+          nodeId: "node-public-grandchild",
+          title: "公开孙节点"
+        },
+        { now: 52 }
+      )
+    ).toThrowError(/at most three levels/i);
   });
 });
 
