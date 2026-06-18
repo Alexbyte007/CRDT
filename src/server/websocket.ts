@@ -16,6 +16,7 @@ import type { ServerAwarenessManager } from "./awareness";
 export interface WebSocketClient {
   socket: WebSocket;
   userId: string;
+  undoScopeId: string;
 }
 
 export function handleWebSocketConnection(
@@ -29,12 +30,15 @@ export function handleWebSocketConnection(
   const url = new URL(request.url ?? "/", "http://localhost");
   const client: WebSocketClient = {
     socket,
-    userId: ""
+    userId: "",
+    undoScopeId: ""
   };
 
   try {
-    const user = authenticateToken(context, url.searchParams.get("token"));
+    const token = url.searchParams.get("token");
+    const user = authenticateToken(context, token);
     client.userId = user.id;
+    client.undoScopeId = token ?? user.id;
     clients.add(client);
 
     // Register user as online (no focused node yet)
@@ -124,6 +128,10 @@ function handleClientMessage(
   awarenessManager?: ServerAwarenessManager
 ): void {
   if (message.type === "ping") {
+    if (awarenessManager) {
+      const user = requireUser(context, client.userId);
+      awarenessManager.touch(user.id, user.name);
+    }
     sendServerMessage(client.socket, { type: "pong" });
     return;
   }
@@ -148,7 +156,8 @@ function handleClientMessage(
     const result = applyViewOperationRequest(context, {
       user,
       operation,
-      envelope
+      envelope,
+      undoScopeId: client.undoScopeId
     });
 
     const change: ChangeInfo | undefined = operation ? {
@@ -180,7 +189,7 @@ function handleClientMessage(
   if (message.type === "undo") {
     const user = requireUser(context, client.userId);
     try {
-      const result = applyUndoRequest(context, user);
+      const result = applyUndoRequest(context, user, client.undoScopeId);
 
       sendServerMessage(client.socket, {
         type: "undoApplied",
@@ -214,7 +223,7 @@ function handleClientMessage(
   if (message.type === "redo") {
     const user = requireUser(context, client.userId);
     try {
-      const result = applyRedoRequest(context, user);
+      const result = applyRedoRequest(context, user, client.undoScopeId);
 
       sendServerMessage(client.socket, {
         type: "redoApplied",
@@ -249,10 +258,10 @@ function handleClientMessage(
     const user = requireUser(context, client.userId);
     sendServerMessage(client.socket, {
       type: "undoStatus",
-      canUndo: context.undoManager.canUndo(user.id),
-      canRedo: context.undoManager.canRedo(user.id),
-      undoCount: context.undoManager.getUserEntries(user.id).length,
-      redoCount: context.undoManager.getUserRedoEntries(user.id).length
+      canUndo: context.undoManager.canUndo(client.undoScopeId),
+      canRedo: context.undoManager.canRedo(client.undoScopeId),
+      undoCount: context.undoManager.getUserEntries(client.undoScopeId).length,
+      redoCount: context.undoManager.getUserRedoEntries(client.undoScopeId).length
     });
     return;
   }

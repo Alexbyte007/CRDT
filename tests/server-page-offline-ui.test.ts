@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { renderHomePage } from "../src/server/page";
 
-describe("home page simulated offline controls", () => {
-  it("renders simulated offline state and toggle hooks", () => {
+describe("home page real offline controls", () => {
+  it("removes simulated offline controls and keeps real offline hooks", () => {
     const html = renderHomePage();
 
-    expect(html).toContain("simulated: false");
-    expect(html).toContain("toggleSimulatedNetwork");
-    expect(html).toContain("模拟断网");
-    expect(html).toContain("恢复联网");
-    expect(html).toContain("模拟离线中，操作已进入队列");
+    expect(html).not.toContain("toggleSimulatedNetwork");
+    expect(html).not.toContain("模拟断网");
+    expect(html).not.toContain('id="connect"');
+    expect(html).toContain("WebSocket 离线，操作已进入队列");
+    expect(html).toContain("autoReconnectIfNeeded");
   });
 
   it("renders reliable offline queue and heartbeat helpers", () => {
@@ -34,11 +34,29 @@ describe("home page simulated offline controls", () => {
     expect(html).toContain("autoReconnectIfNeeded");
     expect(html).toContain("markCurrentUserSendingItemsPending");
     expect(html).toContain("logOfflineQueued");
+    expect(html).toContain("logQueuedWaiting");
+    expect(html).toContain("等待同步：");
     expect(html).toContain("网络不可用，操作已进入离线队列");
     expect(html).toContain("网络不可用，离线队列已保留，稍后会自动重试");
     expect(html).toContain("当前离线，删除操作已进入队列，重连后会重新校验");
+    expect(html).toContain("Network response ended before a valid JSON body was available.");
+    expect(html).toContain("markConnectionUnavailable");
+    expect(html).toContain("已合并：");
+    expect(html).toContain("已跳过：");
+    expect(html).toContain("已拒绝：");
     expect(html).toContain("心跳超时");
     expect(html).toContain("最后心跳");
     expect(html).toContain("最后同步");
+  });
+
+  it("guards undo and redo against repeated clicks while a request is in flight", () => {
+    const html = renderHomePage();
+
+    expect(html).toContain("undoInFlight");
+    expect(html).toContain("redoInFlight");
+    expect(html).toContain("state.undo.undoInFlight = true");
+    expect(html).toContain("state.undo.redoInFlight = true");
+    expect(html).toContain("state.undo.undoInFlight = false");
+    expect(html).toContain("state.undo.redoInFlight = false");
   });
 });

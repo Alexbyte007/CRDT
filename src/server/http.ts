@@ -312,11 +312,13 @@ export async function handleHttpRequest(
     if (request.method === "POST" && url.pathname === "/api/operations") {
       const body = await readJsonBody<OperationRequestBody>(request);
       const user = authenticateRequest(context, request);
+      const undoScopeId = getBearerToken(request) ?? user.id;
       const envelope = body.envelope ? { ...body.envelope, userId: user.id } : undefined;
       const result = applyViewOperationRequest(context, {
         user,
         operation: body.operation,
-        envelope
+        envelope,
+        undoScopeId
       });
       if (!result.deduplicated) {
         onDocumentChanged();
@@ -334,12 +336,14 @@ export async function handleHttpRequest(
     if (request.method === "POST" && url.pathname === "/api/operations/batch") {
       const body = await readJsonBody<BatchOperationRequestBody>(request);
       const user = authenticateRequest(context, request);
+      const undoScopeId = getBearerToken(request) ?? user.id;
       const result = applyBatchViewOperationRequest(context, {
         user,
         operations: body.operations?.map((operation) => ({
           ...operation,
           userId: user.id
-        }))
+        })),
+        undoScopeId
       });
       if (result.applied.length > 0) {
         onDocumentChanged();
@@ -349,6 +353,7 @@ export async function handleHttpRequest(
         applied: result.applied,
         skipped: result.skipped,
         rejected: result.rejected,
+        results: result.results,
         view: result.view,
         stateVector: result.stateVector
       });
@@ -357,7 +362,7 @@ export async function handleHttpRequest(
 
     if (request.method === "POST" && url.pathname === "/api/undo") {
       const user = authenticateRequest(context, request);
-      const result = applyUndoRequest(context, user);
+      const result = applyUndoRequest(context, user, getBearerToken(request) ?? user.id);
       onDocumentChanged();
       sendJson(response, 200, {
         ok: true,
@@ -371,7 +376,7 @@ export async function handleHttpRequest(
 
     if (request.method === "POST" && url.pathname === "/api/redo") {
       const user = authenticateRequest(context, request);
-      const result = applyRedoRequest(context, user);
+      const result = applyRedoRequest(context, user, getBearerToken(request) ?? user.id);
       onDocumentChanged();
       sendJson(response, 200, {
         ok: true,
