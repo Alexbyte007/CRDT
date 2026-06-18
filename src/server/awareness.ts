@@ -90,6 +90,18 @@ export class ServerAwarenessManager {
     this.broadcast();
   }
 
+  touch(userId: string, userName: string): void {
+    const existing = this.states.get(userId);
+    this.states.set(userId, {
+      userId,
+      userName,
+      color: existing?.color ?? userColor(userId),
+      nodeId: existing?.nodeId,
+      lastSeen: Date.now()
+    });
+    this.broadcast();
+  }
+
   remove(userId: string): void {
     const existed = this.states.delete(userId);
     // Only broadcast if the user actually existed in the map
@@ -99,6 +111,7 @@ export class ServerAwarenessManager {
   }
 
   getAllStates(): AwarenessUserState[] {
+    this._reapStale();
     return Array.from(this.states.values());
   }
 

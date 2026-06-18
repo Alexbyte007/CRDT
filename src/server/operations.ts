@@ -7,6 +7,7 @@ import { analyzeDeleteImpact, canResolveDeleteConflict } from "./delete-impact";
 import { AccessControlError, type FullDocOperation, type User, type UserView, type ViewOperation, type ViewOperationEnvelope } from "../types";
 import type {
   BatchViewOperationEnvelope,
+  BatchOperationStatusResult,
   CollaborationContext,
   RejectedOperationResult,
   UndoEntry
@@ -16,6 +17,7 @@ export interface ApplyViewOperationInput {
   user: User;
   operation?: ViewOperation;
   envelope?: ViewOperationEnvelope;
+  undoScopeId?: string;
 }
 
 export interface ApplyViewOperationResult {
@@ -28,12 +30,14 @@ export interface ApplyViewOperationResult {
 export interface ApplyBatchViewOperationsInput {
   user: User;
   operations?: BatchViewOperationEnvelope[];
+  undoScopeId?: string;
 }
 
 export interface ApplyBatchViewOperationsResult {
   applied: string[];
   skipped: string[];
   rejected: RejectedOperationResult[];
+  results: BatchOperationStatusResult[];
   view: UserView;
   stateVector: string;
 }
@@ -64,7 +68,7 @@ export function applyViewOperationRequest(
   });
 
   // Track for undo BEFORE applying (so capturedState reflects pre-operation state)
-  context.undoManager.track(input.user.id, fullOperation, context);
+  context.undoManager.track(input.user.id, fullOperation, context, input.undoScopeId ?? input.user.id);
 
   applyFullDocOperation(context.crdt, fullOperation);
 
@@ -165,8 +169,10 @@ export function applyBatchViewOperationRequest(
   const applied: string[] = [];
   const skipped: string[] = [];
   const rejected: RejectedOperationResult[] = [];
+  const results: BatchOperationStatusResult[] = [];
 
   for (const operation of input.operations) {
+    const operationSummary = summarizeBatchOperation(context, operation);
     try {
       if (!operation.id) {
         throw new Error("Batch operation id is required.");
@@ -178,18 +184,39 @@ export function applyBatchViewOperationRequest(
       };
       const result = applyViewOperationRequest(context, {
         user: input.user,
-        envelope
+        envelope,
+        undoScopeId: input.undoScopeId
       });
 
       if (result.deduplicated) {
         skipped.push(envelope.id);
+        results.push({
+          ...operationSummary,
+          id: envelope.id,
+          status: "skipped",
+          reason: "重复提交，服务端已跳过"
+        });
       } else {
         applied.push(envelope.id);
+        results.push({
+          ...operationSummary,
+          id: envelope.id,
+          status: "applied"
+        });
       }
     } catch (error) {
+      const normalized = normalizeError(error);
       rejected.push({
         id: operation.id,
-        error: normalizeError(error)
+        ...operationSummary,
+        error: normalized
+      });
+      results.push({
+        ...operationSummary,
+        id: operation.id,
+        status: "rejected",
+        reason: normalized.message,
+        error: normalized
       });
     }
   }
@@ -198,11 +225,36 @@ export function applyBatchViewOperationRequest(
     applied,
     skipped,
     rejected,
+    results,
     view: getView(context.crdt, input.user, {
       now: context.now(),
       policyEngine: context.policyEngine
     }),
     stateVector: encodeStateVector(context.crdt)
+  };
+}
+
+function summarizeBatchOperation(
+  context: CollaborationContext,
+  envelope: Partial<BatchViewOperationEnvelope> | undefined
+): Omit<BatchOperationStatusResult, "status" | "reason" | "error"> {
+  const operation = envelope?.operation;
+  if (!operation) {
+    return { id: envelope?.id };
+  }
+
+  const nodeId = operation.type === "addNode" ? operation.parentId : operation.nodeId;
+  const existing = nodeId ? getNodeSnapshot(context.crdt, nodeId) : undefined;
+  const nodeTitle =
+    operation.type === "addNode"
+      ? operation.title
+      : existing?.title ?? nodeId;
+
+  return {
+    id: envelope?.id,
+    operationType: operation.type,
+    nodeId,
+    nodeTitle
   };
 }
 
@@ -291,64 +343,86 @@ export interface ApplyUndoRedoResult {
 
 export function applyUndoRequest(
   context: CollaborationContext,
-  user: User
+  user: User,
+  undoScopeId: string = user.id
 ): ApplyUndoRedoResult {
-  const entry = context.undoManager.peekUndo(user.id);
-  if (!entry) {
-    throw new Error("Nothing to undo.");
+  let lastError: unknown;
+
+  while (context.undoManager.canUndo(undoScopeId)) {
+    const entry = context.undoManager.peekUndo(undoScopeId);
+    if (!entry) break;
+    let movedToRedo = false;
+
+    try {
+      preflightUndoOperation(context, user, entry);
+      context.undoManager.popUndo(undoScopeId);
+      movedToRedo = true;
+      applyFullDocOperation(context.crdt, entry.inverseOp);
+
+      return {
+        view: getView(context.crdt, user, {
+          now: context.now(),
+          policyEngine: context.policyEngine
+        }),
+        stateVector: encodeStateVector(context.crdt),
+        entryId: entry.id,
+        operationType: entry.inverseOp.type,
+        originalOpType: entry.originalOp.type,
+        nodeId: extractNodeId(entry.originalOp)
+      };
+    } catch (error) {
+      lastError = error;
+      if (movedToRedo) {
+        context.undoManager.discardRedo(undoScopeId);
+      } else {
+        context.undoManager.discardUndo(undoScopeId);
+      }
+    }
   }
 
-  preflightUndoOperation(context, user, entry);
-
-  // Pop from undo stack (pushes onto redo stack)
-  context.undoManager.popUndo(user.id);
-
-  // Apply the inverse operation via the normal CRDT pipeline
-  applyFullDocOperation(context.crdt, entry.inverseOp);
-
-  return {
-    view: getView(context.crdt, user, {
-      now: context.now(),
-      policyEngine: context.policyEngine
-    }),
-    stateVector: encodeStateVector(context.crdt),
-    entryId: entry.id,
-    operationType: entry.inverseOp.type,
-    originalOpType: entry.originalOp.type,
-    nodeId: extractNodeId(entry.originalOp)
-  };
+  throw new Error(lastError instanceof Error ? `Nothing more to undo. Last skipped entry: ${lastError.message}` : "Nothing to undo.");
 }
 
 export function applyRedoRequest(
   context: CollaborationContext,
-  user: User
+  user: User,
+  undoScopeId: string = user.id
 ): ApplyUndoRedoResult {
-  const entry = context.undoManager.peekRedo(user.id);
-  if (!entry) {
-    throw new Error("Nothing to redo.");
+  let lastError: unknown;
+
+  while (context.undoManager.canRedo(undoScopeId)) {
+    const entry = context.undoManager.peekRedo(undoScopeId);
+    if (!entry) break;
+    let movedToUndo = false;
+
+    try {
+      preflightRedoOperation(context, user, entry);
+      context.undoManager.popRedo(undoScopeId);
+      movedToUndo = true;
+      applyFullDocOperation(context.crdt, entry.originalOp);
+
+      return {
+        view: getView(context.crdt, user, {
+          now: context.now(),
+          policyEngine: context.policyEngine
+        }),
+        stateVector: encodeStateVector(context.crdt),
+        entryId: entry.id,
+        operationType: entry.originalOp.type,
+        originalOpType: entry.originalOp.type,
+        nodeId: extractNodeId(entry.originalOp)
+      };
+    } catch (error) {
+      lastError = error;
+      if (movedToUndo) {
+        context.undoManager.discardUndo(undoScopeId);
+      } else {
+        context.undoManager.discardRedo(undoScopeId);
+      }
+    }
   }
 
-  // For redo, we re-apply the ORIGINAL operation, which was stored in the redo stack.
-  // But we need to validate that it's still permissible.
-  preflightRedoOperation(context, user, entry);
-
-  // Pop from redo stack (pushes back onto undo stack)
-  context.undoManager.popRedo(user.id);
-
-  // Re-apply the original operation
-  applyFullDocOperation(context.crdt, entry.originalOp);
-
-  return {
-    view: getView(context.crdt, user, {
-      now: context.now(),
-      policyEngine: context.policyEngine
-    }),
-    stateVector: encodeStateVector(context.crdt),
-    entryId: entry.id,
-    operationType: entry.originalOp.type,
-    originalOpType: entry.originalOp.type,
-    nodeId: extractNodeId(entry.originalOp)
-  };
+  throw new Error(lastError instanceof Error ? `Nothing more to redo. Last skipped entry: ${lastError.message}` : "Nothing to redo.");
 }
 
 function extractNodeId(operation: FullDocOperation): string | undefined {
@@ -544,4 +618,3 @@ function preflightRedoOperation(
       );
   }
 }
-

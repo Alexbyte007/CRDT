@@ -180,7 +180,24 @@ export interface OperationResponseBody {
 
 export interface RejectedOperationResult {
   id?: string;
+  operationType?: ViewOperation["type"];
+  nodeId?: NodeId;
+  nodeTitle?: string;
   error: {
+    name: string;
+    code?: string;
+    message: string;
+  };
+}
+
+export interface BatchOperationStatusResult {
+  id?: string;
+  status: "applied" | "skipped" | "rejected";
+  operationType?: ViewOperation["type"];
+  nodeId?: NodeId;
+  nodeTitle?: string;
+  reason?: string;
+  error?: {
     name: string;
     code?: string;
     message: string;
@@ -192,6 +209,7 @@ export interface BatchOperationResponseBody {
   applied: string[];
   skipped: string[];
   rejected: RejectedOperationResult[];
+  results: BatchOperationStatusResult[];
   view: UserView;
   stateVector: string;
 }

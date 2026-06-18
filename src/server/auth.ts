@@ -32,11 +32,16 @@ export function createSession(context: CollaborationContext, userId: UserId): { 
   for (const [token, session] of context.sessions) {
     if (session.userId === userId) {
       context.sessions.delete(token);
+      context.undoManager.clearScope(token);
       if (!revokedUserIds.includes(session.userId)) {
         revokedUserIds.push(session.userId);
       }
     }
   }
+
+  // Older builds keyed undo history by user id. Clear that legacy scope on login
+  // so a fresh session cannot inherit someone else's history for the same account.
+  context.undoManager.clearScope(user.id);
 
   const session: SessionInfo = {
     token: randomBytes(TOKEN_BYTES).toString("base64url"),
@@ -50,6 +55,7 @@ export function createSession(context: CollaborationContext, userId: UserId): { 
 
 export function revokeSession(context: CollaborationContext, token: string): void {
   context.sessions.delete(token);
+  context.undoManager.clearScope(token);
 }
 
 export function authenticateRequest(

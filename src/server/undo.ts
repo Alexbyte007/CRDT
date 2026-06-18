@@ -9,9 +9,9 @@ import { collectSubtreeSnapshots, findIndexInParent } from "../crdt/operations";
 import type { CollaborationContext, UndoCapturedState, UndoEntry } from "./types";
 
 export class ServerUndoManager {
-  private stacks: Map<UserId, UndoEntry[]>;
-  private redoStacks: Map<UserId, UndoEntry[]>;
-  private sequenceCounters: Map<UserId, number>;
+  private stacks: Map<string, UndoEntry[]>;
+  private redoStacks: Map<string, UndoEntry[]>;
+  private sequenceCounters: Map<string, number>;
   private maxDepth: number;
 
   constructor(options?: { maxDepth?: number }) {
@@ -25,10 +25,11 @@ export class ServerUndoManager {
   track(
     userId: UserId,
     operation: FullDocOperation,
-    context: CollaborationContext
+    context: CollaborationContext,
+    scopeId: string = userId
   ): void {
     const capturedState = this.captureState(operation, context);
-    const sequenceNumber = this.nextSequenceNumber(userId);
+    const sequenceNumber = this.nextSequenceNumber(scopeId);
 
     const entry: UndoEntry = {
       id: `undo-${userId}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
@@ -41,78 +42,98 @@ export class ServerUndoManager {
       sequenceNumber
     };
 
-    const stack = this.getOrCreateStack(userId);
+    const stack = this.getOrCreateStack(scopeId);
     stack.push(entry);
     if (stack.length > this.maxDepth) {
       stack.shift();
     }
 
     // New operation invalidates redo history for this user
-    this.clearRedo(userId);
+    this.clearRedo(scopeId);
   }
 
   /** Peek at the top of the undo stack. */
-  peekUndo(userId: UserId): UndoEntry | undefined {
-    const stack = this.stacks.get(userId);
+  peekUndo(scopeId: string): UndoEntry | undefined {
+    const stack = this.stacks.get(scopeId);
     if (!stack || stack.length === 0) return undefined;
     return stack[stack.length - 1];
   }
 
   /** Peek at the top of the redo stack. */
-  peekRedo(userId: UserId): UndoEntry | undefined {
-    const redoStack = this.redoStacks.get(userId);
+  peekRedo(scopeId: string): UndoEntry | undefined {
+    const redoStack = this.redoStacks.get(scopeId);
     if (!redoStack || redoStack.length === 0) return undefined;
     return redoStack[redoStack.length - 1];
   }
 
   /** Pop the top entry from the undo stack and push it onto the redo stack. */
-  popUndo(userId: UserId): UndoEntry | undefined {
-    const stack = this.stacks.get(userId);
+  popUndo(scopeId: string): UndoEntry | undefined {
+    const stack = this.stacks.get(scopeId);
     if (!stack || stack.length === 0) return undefined;
     const entry = stack.pop()!;
-    const redoStack = this.getOrCreateRedoStack(userId);
+    const redoStack = this.getOrCreateRedoStack(scopeId);
     redoStack.push(entry);
     return entry;
   }
 
+  /** Drop the top undo entry without pushing it to redo. Used for invalid history units. */
+  discardUndo(scopeId: string): UndoEntry | undefined {
+    const stack = this.stacks.get(scopeId);
+    if (!stack || stack.length === 0) return undefined;
+    return stack.pop();
+  }
+
   /** Pop the top entry from the redo stack and push it back onto the undo stack. */
-  popRedo(userId: UserId): UndoEntry | undefined {
-    const redoStack = this.redoStacks.get(userId);
+  popRedo(scopeId: string): UndoEntry | undefined {
+    const redoStack = this.redoStacks.get(scopeId);
     if (!redoStack || redoStack.length === 0) return undefined;
     const entry = redoStack.pop()!;
-    const stack = this.getOrCreateStack(userId);
+    const stack = this.getOrCreateStack(scopeId);
     stack.push(entry);
     return entry;
   }
 
-  /** Clear the redo stack for a user (called when they perform a new operation). */
-  clearRedo(userId: UserId): void {
-    this.redoStacks.delete(userId);
+  /** Drop the top redo entry without pushing it back to undo. */
+  discardRedo(scopeId: string): UndoEntry | undefined {
+    const redoStack = this.redoStacks.get(scopeId);
+    if (!redoStack || redoStack.length === 0) return undefined;
+    return redoStack.pop();
   }
 
-  canUndo(userId: UserId): boolean {
-    const stack = this.stacks.get(userId);
+  /** Clear the redo stack for a user (called when they perform a new operation). */
+  clearRedo(scopeId: string): void {
+    this.redoStacks.delete(scopeId);
+  }
+
+  clearScope(scopeId: string): void {
+    this.stacks.delete(scopeId);
+    this.redoStacks.delete(scopeId);
+    this.sequenceCounters.delete(scopeId);
+  }
+
+  canUndo(scopeId: string): boolean {
+    const stack = this.stacks.get(scopeId);
     return !!(stack && stack.length > 0);
   }
 
-  canRedo(userId: UserId): boolean {
-    const redoStack = this.redoStacks.get(userId);
+  canRedo(scopeId: string): boolean {
+    const redoStack = this.redoStacks.get(scopeId);
     return !!(redoStack && redoStack.length > 0);
   }
 
-  getUserEntries(userId: UserId): UndoEntry[] {
-    return [...(this.stacks.get(userId) ?? [])];
+  getUserEntries(scopeId: string): UndoEntry[] {
+    return [...(this.stacks.get(scopeId) ?? [])];
   }
 
-  getUserRedoEntries(userId: UserId): UndoEntry[] {
-    return [...(this.redoStacks.get(userId) ?? [])];
+  getUserRedoEntries(scopeId: string): UndoEntry[] {
+    return [...(this.redoStacks.get(scopeId) ?? [])];
   }
 
   /**
    * Remove entries that reference now-invalid state.
    */
-  pruneInvalidEntries(userId: UserId, context: CollaborationContext): void {
-    const stack = this.stacks.get(userId);
+  pruneInvalidEntries(scopeId: string, context: CollaborationContext): void {
+    const stack = this.stacks.get(scopeId);
     if (!stack) return;
 
     const valid: UndoEntry[] = [];
@@ -121,33 +142,33 @@ export class ServerUndoManager {
         valid.push(entry);
       }
     }
-    this.stacks.set(userId, valid);
+    this.stacks.set(scopeId, valid);
   }
 
   // ── Private helpers ──
 
-  private getOrCreateStack(userId: UserId): UndoEntry[] {
-    let stack = this.stacks.get(userId);
+  private getOrCreateStack(scopeId: string): UndoEntry[] {
+    let stack = this.stacks.get(scopeId);
     if (!stack) {
       stack = [];
-      this.stacks.set(userId, stack);
+      this.stacks.set(scopeId, stack);
     }
     return stack;
   }
 
-  private getOrCreateRedoStack(userId: UserId): UndoEntry[] {
-    let redoStack = this.redoStacks.get(userId);
+  private getOrCreateRedoStack(scopeId: string): UndoEntry[] {
+    let redoStack = this.redoStacks.get(scopeId);
     if (!redoStack) {
       redoStack = [];
-      this.redoStacks.set(userId, redoStack);
+      this.redoStacks.set(scopeId, redoStack);
     }
     return redoStack;
   }
 
-  private nextSequenceNumber(userId: UserId): number {
-    const current = this.sequenceCounters.get(userId) ?? 0;
+  private nextSequenceNumber(scopeId: string): number {
+    const current = this.sequenceCounters.get(scopeId) ?? 0;
     const next = current + 1;
-    this.sequenceCounters.set(userId, next);
+    this.sequenceCounters.set(scopeId, next);
     return next;
   }
 
