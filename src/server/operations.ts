@@ -4,7 +4,15 @@ import { getNodeSnapshot } from "../crdt/snapshot";
 import { encodeStateVector } from "../crdt/state-vector";
 import { getView, putOperation } from "../view/transform";
 import { analyzeDeleteImpact, canResolveDeleteConflict } from "./delete-impact";
-import { AccessControlError, type FullDocOperation, type User, type UserView, type ViewOperation, type ViewOperationEnvelope } from "../types";
+import {
+  AccessControlError,
+  type FullDocOperation,
+  type ResurrectNodeOperation,
+  type User,
+  type UserView,
+  type ViewOperation,
+  type ViewOperationEnvelope
+} from "../types";
 import type {
   BatchViewOperationEnvelope,
   BatchOperationStatusResult,
@@ -351,12 +359,10 @@ export function applyUndoRequest(
   while (context.undoManager.canUndo(undoScopeId)) {
     const entry = context.undoManager.peekUndo(undoScopeId);
     if (!entry) break;
-    let movedToRedo = false;
 
     try {
       preflightUndoOperation(context, user, entry);
       context.undoManager.popUndo(undoScopeId);
-      movedToRedo = true;
       applyFullDocOperation(context.crdt, entry.inverseOp);
 
       return {
@@ -372,15 +378,15 @@ export function applyUndoRequest(
       };
     } catch (error) {
       lastError = error;
-      if (movedToRedo) {
-        context.undoManager.discardRedo(undoScopeId);
-      } else {
-        context.undoManager.discardUndo(undoScopeId);
-      }
+      context.undoManager.discardUndo(undoScopeId);
     }
   }
 
-  throw new Error(lastError instanceof Error ? `Nothing more to undo. Last skipped entry: ${lastError.message}` : "Nothing to undo.");
+  throw new Error(
+    lastError instanceof Error
+      ? `Nothing more to undo. Last skipped entry: ${lastError.message}`
+      : "Nothing to undo."
+  );
 }
 
 export function applyRedoRequest(
@@ -393,13 +399,12 @@ export function applyRedoRequest(
   while (context.undoManager.canRedo(undoScopeId)) {
     const entry = context.undoManager.peekRedo(undoScopeId);
     if (!entry) break;
-    let movedToUndo = false;
 
     try {
       preflightRedoOperation(context, user, entry);
       context.undoManager.popRedo(undoScopeId);
-      movedToUndo = true;
-      applyFullDocOperation(context.crdt, entry.originalOp);
+      const redoOperation = buildRedoOperation(context, entry);
+      applyFullDocOperation(context.crdt, redoOperation);
 
       return {
         view: getView(context.crdt, user, {
@@ -408,21 +413,35 @@ export function applyRedoRequest(
         }),
         stateVector: encodeStateVector(context.crdt),
         entryId: entry.id,
-        operationType: entry.originalOp.type,
+        operationType: redoOperation.type,
         originalOpType: entry.originalOp.type,
         nodeId: extractNodeId(entry.originalOp)
       };
     } catch (error) {
       lastError = error;
-      if (movedToUndo) {
-        context.undoManager.discardUndo(undoScopeId);
-      } else {
-        context.undoManager.discardRedo(undoScopeId);
-      }
+      context.undoManager.discardRedo(undoScopeId);
     }
   }
 
-  throw new Error(lastError instanceof Error ? `Nothing more to redo. Last skipped entry: ${lastError.message}` : "Nothing to redo.");
+  throw new Error(
+    lastError instanceof Error
+      ? `Nothing more to redo. Last skipped entry: ${lastError.message}`
+      : "Nothing to redo."
+  );
+}
+
+function buildRedoOperation(context: CollaborationContext, entry: UndoEntry): FullDocOperation {
+  if (entry.capturedState.kind === "addNode" && entry.originalOp.type === "addNode") {
+    return {
+      type: "resurrectNode",
+      nodeId: entry.capturedState.nodeId,
+      subtreeNodes: [entry.capturedState.nodeSnapshot],
+      actorId: entry.originalOp.actorId,
+      timestamp: context.now()
+    } satisfies ResurrectNodeOperation;
+  }
+
+  return entry.originalOp;
 }
 
 function extractNodeId(operation: FullDocOperation): string | undefined {
@@ -553,8 +572,23 @@ function preflightRedoOperation(
   // Re-validate using the standard preflight for the original operation type
   switch (originalOp.type) {
     case "addNode": {
-      // Re-applying addNode — check parent still exists, visible, and user can add
-      const parent = getNodeSnapshot(context.crdt, originalOp.parentId!);
+      const captured = redoEntry.capturedState;
+      if (captured.kind !== "addNode") {
+        throw new AccessControlError("Cannot redo: add-node history is malformed.");
+      }
+
+      if (!context.crdt.tombstones.has(captured.nodeId)) {
+        throw new AccessControlError(
+          `Cannot redo: node ${captured.nodeId} is not available for restoration.`
+        );
+      }
+
+      const parentId = captured.parentId;
+      if (parentId === null) {
+        return;
+      }
+
+      const parent = getNodeSnapshot(context.crdt, parentId);
       if (!parent) {
         throw new AccessControlError(
           `Cannot redo: parent node no longer exists.`

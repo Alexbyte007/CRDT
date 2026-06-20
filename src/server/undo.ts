@@ -178,12 +178,25 @@ export class ServerUndoManager {
   ): UndoCapturedState {
     switch (operation.type) {
       case "addNode": {
-        const snapshot = getNodeSnapshot(context.crdt, operation.node.id);
+        const timestamp = operation.timestamp ?? context.now();
         return {
           kind: "addNode",
           nodeId: operation.node.id,
           parentId: operation.parentId,
-          nodeSnapshot: snapshot!
+          nodeSnapshot: {
+            id: operation.node.id,
+            parentId: operation.parentId,
+            type: operation.node.type,
+            title: operation.node.title,
+            content: operation.node.content,
+            attrs: operation.node.attrs,
+            acl: operation.node.acl,
+            children: operation.node.children ?? [],
+            createdBy: operation.node.createdBy,
+            createdAt: operation.node.createdAt ?? timestamp,
+            updatedBy: operation.node.updatedBy ?? operation.actorId,
+            updatedAt: operation.node.updatedAt ?? timestamp
+          }
         };
       }
       case "deleteNode": {
