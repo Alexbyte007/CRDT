@@ -77,7 +77,6 @@ export interface PublicUser {
 export interface UpdateUserRequestBody {
   name?: string;
   role?: UserRole;
-  department?: string;
 }
 
 export interface UpdateProfileRequestBody {

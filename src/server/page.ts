@@ -1023,7 +1023,7 @@ export function renderHomePage(): string {
           <div class="section-head compact">
             <div>
               <h3>用户管理</h3>
-              <p>管理系统中的用户角色与部门权限。</p>
+              <p>管理系统中的用户身份，节点权限由角色与 ACL 配置共同决定。</p>
             </div>
           </div>
           <div class="user-table-wrap" style="margin-top: 8px;">
@@ -1033,7 +1033,6 @@ export function renderHomePage(): string {
                   <th style="padding: 10px 14px; color: var(--muted); font-weight: 600;">显示名称</th>
                   <th style="padding: 10px 14px; color: var(--muted); font-weight: 600;">用户名</th>
                   <th style="padding: 10px 14px; color: var(--muted); font-weight: 600;">当前身份</th>
-                  <th style="padding: 10px 14px; color: var(--muted); font-weight: 600;">部门</th>
                   <th style="padding: 10px 14px; color: var(--muted); font-weight: 600;">创建时间</th>
                   <th style="padding: 10px 14px; color: var(--muted); font-weight: 600;">操作</th>
                 </tr>
@@ -1289,6 +1288,7 @@ export function renderHomePage(): string {
           connectionStatus: "offline",
           lastPongAt: 0,
           lastSyncAt: 0,
+          reconnectingFromFailure: false,
           syncInFlight: false,
           queue: loadStoredOfflineQueue()
         },
@@ -2025,7 +2025,7 @@ export function renderHomePage(): string {
         const currentQueue = queueForCurrentUser();
         const stats = queueStatsForCurrentUser();
         els.sessionUser.textContent = state.user
-          ? state.user.name + " / " + state.user.role + " / " + state.user.department
+          ? state.user.name + " / " + state.user.role
           : "未登录";
         els.policyVersion.textContent = state.policyVersion ? String(state.policyVersion) : "-";
         els.connectionState.textContent = connectionStatusLabel();
@@ -2083,7 +2083,6 @@ export function renderHomePage(): string {
           appendTextCell(row, user.name);
           appendTextCell(row, user.username || user.id);
           row.appendChild(renderRoleCell(user, adminCount));
-          row.appendChild(renderDepartmentCell(user));
           appendTextCell(row, formatTimestamp(user.createdAt));
           row.appendChild(renderUserActionCell(user, adminCount));
           els.userRows.appendChild(row);
@@ -2121,30 +2120,6 @@ export function renderHomePage(): string {
           user.role === "admin" && adminCount <= 1
         );
         cell.appendChild(roleSelect.element);
-        return cell;
-      }
-
-      function renderDepartmentCell(user) {
-        const cell = document.createElement("td");
-        const departmentSelect = createCustomSelect(
-          [
-            { value: "all", label: "all" },
-            { value: "dev", label: "dev" },
-            { value: "external", label: "external" },
-            { value: "finance", label: "finance" }
-          ],
-          user.department,
-          async (newValue) => {
-            const previousDepartment = user.department;
-            try {
-              await updateUserDepartment(user.id, newValue);
-            } catch (error) {
-              departmentSelect.value = previousDepartment;
-              setUserManagementStatus(error.message);
-            }
-          }
-        );
-        cell.appendChild(departmentSelect.element);
         return cell;
       }
 
@@ -3809,7 +3784,7 @@ export function renderHomePage(): string {
             option.dataset.userId = user.id;
             option.innerHTML =
               "<span>" +
-              escapeHtml(user.name + " / " + user.role + " / " + user.department) +
+              escapeHtml(user.name + " / " + user.role) +
               "</span><span class=\\\"multi-select-check\\\">" +
               (selectedUserIds.has(user.id) ? "✓" : "") +
               "</span>";
@@ -4343,8 +4318,7 @@ export function renderHomePage(): string {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            role,
-            department: departmentForRole(role, existingUser ? existingUser.department : "")
+            role
           })
         });
         if (state.user && body.user && body.user.id === state.user.id) {
@@ -4354,37 +4328,6 @@ export function renderHomePage(): string {
         await loadView();
         render();
         setUserManagementStatus("身份已更新，权限视图已刷新");
-      }
-
-      async function updateUserDepartment(userId, department) {
-        setUserManagementStatus("正在更新部门...");
-        const body = await requestJson("/api/users/" + encodeURIComponent(userId), {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ department })
-        });
-        if (state.user && body.user && body.user.id === state.user.id) {
-          state.user = body.user;
-        }
-        await refreshSession();
-        await loadView();
-        render();
-        setUserManagementStatus("部门已更新，权限视图已刷新");
-      }
-
-      function departmentForRole(role, currentDepartment) {
-        if (role === "member" || role === "manager") {
-          return currentDepartment && currentDepartment !== "external" && currentDepartment !== "all"
-            ? currentDepartment
-            : "dev";
-        }
-        if (role === "guest") {
-          return "external";
-        }
-        if (role === "admin") {
-          return currentDepartment || "all";
-        }
-        return currentDepartment || "external";
       }
 
       async function deleteUserAccount(user) {
@@ -4470,7 +4413,7 @@ export function renderHomePage(): string {
           .map((node) => "- " + node.title + " (" + node.id + ")")
           .join("\\n");
         const affectedUsers = impact.affectedUsers
-          .map((user) => "- " + user.name + " / " + user.role + " / " + user.department)
+          .map((user) => "- " + user.name + " / " + user.role)
           .join("\\n");
         return (
           "删除已阻止：该子树包含其他用户可见内容。\\n" +
@@ -4649,7 +4592,7 @@ export function renderHomePage(): string {
         return items
           .map((item) =>
             "name" in item
-              ? "- " + item.name + " / " + item.role + " / " + item.department
+              ? "- " + item.name + " / " + item.role
               : "- " + item.title + " (" + item.id + ")"
           )
           .join("\\n");
@@ -5128,22 +5071,40 @@ export function renderHomePage(): string {
         await syncOfflineQueue({ silent: true });
       }
 
-      function connectWebSocket() {
+      function connectWebSocket(options) {
         if (!state.token) return setStatus("请先登录");
         if (isSocketActive()) return setStatus("WebSocket 已连接或正在连接");
+        const reconnectingFromFailure =
+          (state.offline.connectionStatus === "stale" || state.offline.connectionStatus === "offline") &&
+          state.offline.lastPongAt > 0;
         const protocol = location.protocol === "https:" ? "wss:" : "ws:";
         const socket = new WebSocket(protocol + "//" + location.host + "/ws?token=" + encodeURIComponent(state.token));
         state.socket = socket;
         state.offline.connected = false;
         state.offline.connectionStatus = "connecting";
+        state.offline.reconnectingFromFailure = reconnectingFromFailure;
         renderSyncState();
-        setStatus("正在联网...");
+        if (!options || !options.auto) {
+          setStatus("正在联网...");
+        }
         socket.onmessage = (event) => {
           const message = JSON.parse(event.data);
           if (message.type === "pong") {
+            const wasReconnecting = state.offline.reconnectingFromFailure;
             state.offline.lastPongAt = Date.now();
             state.offline.connected = true;
             state.offline.connectionStatus = "connected";
+            state.offline.reconnectingFromFailure = false;
+            if (wasReconnecting) {
+              appendOperationLog({
+                kind: "remote",
+                title: "连接已恢复",
+                detail: "已收到服务器心跳响应，开始同步离线队列",
+                key: "network:recovered:" + state.offline.lastPongAt
+              });
+              renderOperationLogs();
+              setStatus("已重新连接，正在同步离线队列");
+            }
             renderSyncState();
             syncOfflineQueue({ silent: true }).catch((error) => setStatus(error.message));
             return;
@@ -5264,6 +5225,7 @@ export function renderHomePage(): string {
           if (state.socket !== socket) return;
           state.socket = null;
           state.offline.connected = false;
+          state.offline.reconnectingFromFailure = true;
           state.undo.undoInFlight = false;
           state.undo.redoInFlight = false;
           markCurrentUserSendingItemsPending("WebSocket 已断开，等待恢复联网后重试");
@@ -5280,6 +5242,7 @@ export function renderHomePage(): string {
           if (state.socket !== socket) return;
           state.socket = null;
           state.offline.connected = false;
+          state.offline.reconnectingFromFailure = true;
           state.undo.undoInFlight = false;
           state.undo.redoInFlight = false;
           state.offline.connectionStatus = "offline";
@@ -5300,6 +5263,21 @@ export function renderHomePage(): string {
       window.setInterval(() => {
         autoReconnectIfNeeded();
       }, RECONNECT_INTERVAL_MS);
+
+      window.addEventListener("online", () => {
+        appendOperationLog({
+          kind: "local",
+          title: "浏览器网络已恢复",
+          detail: "正在重新连接服务器",
+          key: "network:browser-online:" + Date.now()
+        });
+        renderOperationLogs();
+        autoReconnectIfNeeded();
+      });
+
+      window.addEventListener("offline", () => {
+        markConnectionUnavailable("浏览器报告网络已断开，操作会保留在离线队列");
+      });
 
       // ── Avatar ──
 

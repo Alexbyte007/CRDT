@@ -445,11 +445,9 @@ function updateUser(
 ): User {
   const role = body.role === undefined ? target.role : parseUserRole(body.role);
   const department =
-    typeof body.department === "string"
-      ? body.department
-      : body.role === undefined
-        ? target.department
-        : defaultDepartmentForRole(role, target.department);
+    body.role === undefined
+      ? target.department
+      : defaultDepartmentForRole(role, target.department);
   if (target.role === "admin" && role !== "admin" && countAdmins(context) <= 1) {
     throw new AuthorizationError("Cannot remove the last administrator.");
   }
