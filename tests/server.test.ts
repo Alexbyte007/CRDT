@@ -130,6 +130,8 @@ describe("collaboration server", () => {
     expect(html).toContain("node-actions");
     expect(html).toContain("autoSaveNode");
     expect(html).toContain("restoreEditorFocus");
+    expect(html).toContain("添加一级节点");
+    expect(html).toContain("addRootNode");
     expect(html).toContain("添加子节点");
     expect(html).toContain("谁能看");
     expect(html).toContain("谁能改");
@@ -162,7 +164,7 @@ describe("collaboration server", () => {
     expect(html).toContain("userManagement");
     expect(html).toContain("renderUserManagement");
     expect(html).toContain("updateUserRole");
-    expect(html).toContain("updateUserDepartment");
+    expect(html).not.toContain("updateUserDepartment");
     expect(html).toContain("deleteUserAccount");
     expect(html).toContain("/api/users/");
     expect(html).toContain("formatDeleteRejectedMessage");
@@ -197,9 +199,10 @@ describe("collaboration server", () => {
     }
   });
 
-  it("analyzes delete impact and blocks silent deletion when descendants are visible to others", async () => {
+  it("analyzes delete impact and blocks silent deletion when descendants are not deletable by the actor", async () => {
     const { baseUrl } = await startTestServer();
     const admin = await login(baseUrl, "u-admin");
+    const manager = await login(baseUrl, "u-dev-manager");
     const viewResponse = await fetch(`${baseUrl}/api/view`, {
       headers: authHeaders(admin.token)
     });
@@ -236,7 +239,11 @@ describe("collaboration server", () => {
               nodeId: "node-impact-parent",
               aclPatch: {
                 visibility: "restricted",
-                allowedRoles: ["admin"]
+                allowedRoles: ["admin", "manager"],
+                deletableRoles: ["admin", "manager"],
+                advancedPermissions: {
+                  deleteConflictResolverUserIds: ["u-dev-manager"]
+                }
               }
             }
           },
@@ -259,7 +266,8 @@ describe("collaboration server", () => {
               nodeId: "node-impact-public-child",
               aclPatch: {
                 visibility: "public",
-                allowedRoles: ["admin", "manager", "member", "guest"]
+                allowedRoles: ["admin", "manager", "member", "guest"],
+                deletableRoles: ["admin"]
               }
             }
           }
@@ -269,12 +277,12 @@ describe("collaboration server", () => {
     expect(batchResponse.status).toBe(200);
 
     const impactResponse = await fetch(`${baseUrl}/api/delete-impact?nodeId=node-impact-parent`, {
-      headers: authHeaders(admin.token)
+      headers: authHeaders(manager.token)
     });
     const impact = (await impactResponse.json()) as {
       ok: true;
       deleteCount: number;
-      visibleNodes: Array<{ id: string; title: string; visibleTo: string[] }>;
+      visibleNodes: Array<{ id: string; title: string; visibleTo: string[]; reason: string }>;
       affectedUsers: Array<{ id: string; name: string }>;
       blocksSilentDelete: boolean;
     };
@@ -286,11 +294,12 @@ describe("collaboration server", () => {
       {
         id: "node-impact-public-child",
         title: "其他用户可见子节点",
-        visibleTo: ["u-dev-manager", "u-dev-member", "u-guest"]
+        visibleTo: ["u-admin", "u-dev-member", "u-guest"],
+        reason: "not-deletable"
       }
     ]);
     expect(impact.affectedUsers.map((user) => user.id)).toEqual([
-      "u-dev-manager",
+      "u-admin",
       "u-dev-member",
       "u-guest"
     ]);
@@ -322,7 +331,7 @@ describe("collaboration server", () => {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        ...authHeaders(admin.token)
+        ...authHeaders(manager.token)
       },
       body: JSON.stringify({
         operation: {
@@ -345,7 +354,7 @@ describe("collaboration server", () => {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        ...authHeaders(admin.token)
+        ...authHeaders(manager.token)
       },
       body: JSON.stringify({
         operation: {
@@ -364,14 +373,29 @@ describe("collaboration server", () => {
     expect(snapshot.tombstones["node-impact-public-child"]).toBeDefined();
   });
 
-  it("allows direct delete for leaf nodes but requires conflict handling for non-leaf nodes", async () => {
+  it("allows direct subtree delete when the user can delete every descendant", async () => {
     const { baseUrl } = await startTestServer();
     const admin = await login(baseUrl, "u-admin");
     const manager = await login(baseUrl, "u-dev-manager");
     await grantDelete(baseUrl, admin.token, "node-dev-plan", ["admin", "manager"]);
     await grantDelete(baseUrl, admin.token, "node-module-a", ["admin", "manager"]);
 
-    const nonLeafResponse = await fetch(`${baseUrl}/api/operations`, {
+    const impactResponse = await fetch(`${baseUrl}/api/delete-impact?nodeId=node-dev-plan`, {
+      headers: authHeaders(manager.token)
+    });
+    const impact = (await impactResponse.json()) as {
+      ok: true;
+      deleteCount: number;
+      blocksSilentDelete: boolean;
+      visibleNodes: Array<{ id: string }>;
+    };
+
+    expect(impactResponse.status).toBe(200);
+    expect(impact.deleteCount).toBeGreaterThan(1);
+    expect(impact.blocksSilentDelete).toBe(false);
+    expect(impact.visibleNodes).toEqual([]);
+
+    const response = await fetch(`${baseUrl}/api/operations`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -385,31 +409,15 @@ describe("collaboration server", () => {
       })
     });
 
-    expect(nonLeafResponse.status).toBe(400);
-    expect(getDocumentSnapshot(runningServer!.context.crdt).nodes["node-dev-plan"]).toBeDefined();
-
-    const leafResponse = await fetch(`${baseUrl}/api/operations`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...authHeaders(manager.token)
-      },
-      body: JSON.stringify({
-        operation: {
-          type: "deleteNode",
-          nodeId: "node-module-a"
-        }
-      })
-    });
-
-    expect(leafResponse.status).toBe(200);
+    expect(response.status).toBe(200);
     const snapshot = getDocumentSnapshot(runningServer!.context.crdt);
+    expect(snapshot.nodes["node-dev-plan"]).toBeUndefined();
     expect(snapshot.nodes["node-module-a"]).toBeUndefined();
-    expect(snapshot.nodes["node-dev-plan"]).toBeDefined();
+    expect(snapshot.tombstones["node-dev-plan"]).toBeDefined();
     expect(snapshot.tombstones["node-module-a"]).toBeDefined();
   });
 
-  it("rejects non-admin subtree delete when a child is visible to broader audiences", async () => {
+  it("rejects subtree delete when the user cannot delete a descendant", async () => {
     const { baseUrl } = await startTestServer();
     const admin = await login(baseUrl, "u-admin");
     const manager = await login(baseUrl, "u-dev-manager");
@@ -485,7 +493,7 @@ describe("collaboration server", () => {
     });
     const impact = (await impactResponse.json()) as {
       ok: true;
-      visibleNodes: Array<{ id: string; visibleTo: string[] }>;
+      visibleNodes: Array<{ id: string; visibleTo: string[]; reason: string }>;
       affectedUsers: Array<{ id: string }>;
       blocksSilentDelete: boolean;
     };
@@ -494,7 +502,8 @@ describe("collaboration server", () => {
       {
         id: "node-broader-child",
         title: "研发成员仍可见子项目",
-        visibleTo: ["u-admin", "u-dev-member"]
+        visibleTo: ["u-admin", "u-dev-member"],
+        reason: "not-deletable"
       }
     ]);
     expect(impact.affectedUsers.map((user) => user.id)).toEqual([
@@ -832,7 +841,7 @@ describe("collaboration server", () => {
       ok: true;
       blocksSilentDelete: boolean;
       canResolveConflict: boolean;
-      visibleNodes: Array<{ id: string; visibleTo: string[] }>;
+      visibleNodes: Array<{ id: string; visibleTo: string[]; reason: string }>;
     };
 
     expect(impactResponse.status).toBe(200);
@@ -842,7 +851,8 @@ describe("collaboration server", () => {
       {
         id: "node-dev-team-child-under-public",
         title: "研发团队子项目",
-        visibleTo: ["u-admin", "u-dev-manager", "u-dev-member"]
+        visibleTo: ["u-admin", "u-dev-manager", "u-dev-member"],
+        reason: "not-deletable"
       }
     ]);
 
@@ -889,6 +899,60 @@ describe("collaboration server", () => {
     expect(response.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(flattenViewIds(body.view)).toContain("node-http");
+  });
+
+  it("allows admins to add root project spaces and rejects non-admin root adds", async () => {
+    const { baseUrl } = await startTestServer();
+    const admin = await login(baseUrl, "u-admin");
+    const member = await login(baseUrl, "u-dev-member");
+
+    const forbidden = await fetch(`${baseUrl}/api/operations`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(member.token)
+      },
+      body: JSON.stringify({
+        operation: {
+          type: "addNode",
+          parentId: null,
+          nodeId: "node-member-root",
+          title: "成员根项目"
+        }
+      })
+    });
+    expect(forbidden.status).toBe(400);
+
+    const response = await fetch(`${baseUrl}/api/operations`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...authHeaders(admin.token)
+      },
+      body: JSON.stringify({
+        operation: {
+          type: "addNode",
+          parentId: null,
+          nodeId: "node-admin-root",
+          title: "管理员新增一级项目",
+          aclPatch: {
+            visibility: "restricted",
+            allowedRoles: ["admin", "manager", "member"]
+          }
+        }
+      })
+    });
+    const body = (await response.json()) as { ok: true; view: UserView };
+
+    expect(response.status).toBe(200);
+    expect(flattenViewIds(body.view)).toContain("node-admin-root");
+    const snapshot = getDocumentSnapshot(runningServer!.context.crdt);
+    expect(snapshot.rootIds).toContain("node-admin-root");
+    expect(snapshot.nodes["node-admin-root"]).toMatchObject({
+      parentId: null,
+      type: "folder",
+      title: "管理员新增一级项目"
+    });
   });
 
   it("accepts operation envelopes and deduplicates repeated operation ids over HTTP", async () => {
@@ -1318,8 +1382,7 @@ describe("collaboration server", () => {
         ...authHeaders(admin.token)
       },
       body: JSON.stringify({
-        role: "guest",
-        department: "external"
+        role: "guest"
       })
     });
 
@@ -1392,8 +1455,7 @@ describe("collaboration server", () => {
           ...authHeaders(admin.token)
         },
         body: JSON.stringify({
-          role: "guest",
-          department: "external"
+          role: "guest"
         })
       });
       expect(updateResponse.status).toBe(200);

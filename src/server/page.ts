@@ -1023,7 +1023,7 @@ export function renderHomePage(): string {
           <div class="section-head compact">
             <div>
               <h3>用户管理</h3>
-              <p>管理系统中的用户角色与部门权限。</p>
+              <p>管理系统中的用户身份，节点权限由角色与 ACL 配置共同决定。</p>
             </div>
           </div>
           <div class="user-table-wrap" style="margin-top: 8px;">
@@ -1033,7 +1033,6 @@ export function renderHomePage(): string {
                   <th style="padding: 10px 14px; color: var(--muted); font-weight: 600;">显示名称</th>
                   <th style="padding: 10px 14px; color: var(--muted); font-weight: 600;">用户名</th>
                   <th style="padding: 10px 14px; color: var(--muted); font-weight: 600;">当前身份</th>
-                  <th style="padding: 10px 14px; color: var(--muted); font-weight: 600;">部门</th>
                   <th style="padding: 10px 14px; color: var(--muted); font-weight: 600;">创建时间</th>
                   <th style="padding: 10px 14px; color: var(--muted); font-weight: 600;">操作</th>
                 </tr>
@@ -1051,6 +1050,7 @@ export function renderHomePage(): string {
                 <h3>项目空间</h3>
                 <p>管理和查看协同树节点。</p>
               </div>
+              <button id="addRootNode" type="button" class="btn small secondary hidden">添加一级节点</button>
             </div>
             <ul id="tree" class="tree tree-workspace"></ul>
           </section>
@@ -1289,6 +1289,7 @@ export function renderHomePage(): string {
           connectionStatus: "offline",
           lastPongAt: 0,
           lastSyncAt: 0,
+          reconnectingFromFailure: false,
           syncInFlight: false,
           queue: loadStoredOfflineQueue()
         },
@@ -1336,6 +1337,7 @@ export function renderHomePage(): string {
         syncOffline: document.querySelector("#syncOffline"),
         status: document.querySelector("#status"),
         tree: document.querySelector("#tree"),
+        addRootNode: document.querySelector("#addRootNode"),
         userManagement: document.querySelector("#userManagement"),
         userRows: document.querySelector("#userRows"),
         userManagementStatus: document.querySelector("#userManagementStatus"),
@@ -1732,8 +1734,32 @@ export function renderHomePage(): string {
               '</div>';
           }).join('') + '</div>';
         }
-        if (els.localLogList) els.localLogList.innerHTML = formatLog(state.localLog, "还没有本地编辑。");
+        if (els.localLogList) {
+          els.localLogList.innerHTML = formatLog(localLogWithQueueEntries(), "还没有本地编辑。");
+        }
         if (els.remoteLogList) els.remoteLogList.innerHTML = formatLog(state.remoteLog, "等待后端返回或 WebSocket 更新。");
+      }
+
+      function localLogWithQueueEntries() {
+        const entries = state.localLog.slice();
+        const existingKeys = new Set(entries.map((entry) => entry.key).filter(Boolean));
+        for (const item of queueForCurrentUser()) {
+          if (item.status !== "pending" && item.status !== "sending") continue;
+          const key = "queue-visible:" + item.id + ":" + item.status;
+          if (existingKeys.has(key)) continue;
+          const summary = formatViewOperation(item.operation);
+          entries.push({
+            kind: "local",
+            operator: state.user ? state.user.name : "",
+            title: (item.status === "sending" ? "正在发送：" : "等待同步：") + summary.title,
+            detail: summary.detail || (item.status === "sending" ? "等待服务端确认" : "操作已保留在离线队列"),
+            time: new Date(item.createdAt || Date.now()).toLocaleTimeString("zh-CN", { hour12: false }),
+            createdAt: item.createdAt || Date.now(),
+            key,
+            coalesceKey: ""
+          });
+        }
+        return entries;
       }
 
       function findViewNodeById(nodeId, nodes) {
@@ -1783,6 +1809,12 @@ export function renderHomePage(): string {
 
         if (operation.type === "addNode" || operation.type === "insertNode") {
           const childTitle = operation.title || "新节点";
+          if (operation.parentId === null) {
+            return {
+              title: "新增一级节点「" + childTitle + "」",
+              detail: "添加到项目空间根部"
+            };
+          }
           const parentTitle = resolveNodeTitle(operation.parentId);
           return {
             title: "新增子节点「" + childTitle + "」",
@@ -2006,6 +2038,7 @@ export function renderHomePage(): string {
         renderUserManagement();
         renderSyncState();
         renderOperationLogs();
+        renderRootActions();
         if (!state.view) {
           renderMarkdownEditorDrawer();
           restoreEditorFocus(focus);
@@ -2025,7 +2058,7 @@ export function renderHomePage(): string {
         const currentQueue = queueForCurrentUser();
         const stats = queueStatsForCurrentUser();
         els.sessionUser.textContent = state.user
-          ? state.user.name + " / " + state.user.role + " / " + state.user.department
+          ? state.user.name + " / " + state.user.role
           : "未登录";
         els.policyVersion.textContent = state.policyVersion ? String(state.policyVersion) : "-";
         els.connectionState.textContent = connectionStatusLabel();
@@ -2050,6 +2083,13 @@ export function renderHomePage(): string {
         els.redoBtn.title = state.undo.canRedo
           ? "重做 (Ctrl+Y) — " + state.undo.redoCount + " 条可重做"
           : "重做 (Ctrl+Y)";
+      }
+
+      function renderRootActions() {
+        if (!els.addRootNode) return;
+        const canAddRoot = Boolean(state.user && state.user.role === "admin");
+        els.addRootNode.classList.toggle("hidden", !canAddRoot);
+        els.addRootNode.disabled = !canAddRoot;
       }
 
       function connectionStatusLabel() {
@@ -2083,7 +2123,6 @@ export function renderHomePage(): string {
           appendTextCell(row, user.name);
           appendTextCell(row, user.username || user.id);
           row.appendChild(renderRoleCell(user, adminCount));
-          row.appendChild(renderDepartmentCell(user));
           appendTextCell(row, formatTimestamp(user.createdAt));
           row.appendChild(renderUserActionCell(user, adminCount));
           els.userRows.appendChild(row);
@@ -2121,30 +2160,6 @@ export function renderHomePage(): string {
           user.role === "admin" && adminCount <= 1
         );
         cell.appendChild(roleSelect.element);
-        return cell;
-      }
-
-      function renderDepartmentCell(user) {
-        const cell = document.createElement("td");
-        const departmentSelect = createCustomSelect(
-          [
-            { value: "all", label: "all" },
-            { value: "dev", label: "dev" },
-            { value: "external", label: "external" },
-            { value: "finance", label: "finance" }
-          ],
-          user.department,
-          async (newValue) => {
-            const previousDepartment = user.department;
-            try {
-              await updateUserDepartment(user.id, newValue);
-            } catch (error) {
-              departmentSelect.value = previousDepartment;
-              setUserManagementStatus(error.message);
-            }
-          }
-        );
-        cell.appendChild(departmentSelect.element);
         return cell;
       }
 
@@ -3809,7 +3824,7 @@ export function renderHomePage(): string {
             option.dataset.userId = user.id;
             option.innerHTML =
               "<span>" +
-              escapeHtml(user.name + " / " + user.role + " / " + user.department) +
+              escapeHtml(user.name + " / " + user.role) +
               "</span><span class=\\\"multi-select-check\\\">" +
               (selectedUserIds.has(user.id) ? "✓" : "") +
               "</span>";
@@ -4326,6 +4341,23 @@ export function renderHomePage(): string {
         });
       }
 
+      async function addRootNode() {
+        if (!state.user || state.user.role !== "admin") {
+          setStatus("只有管理员可以添加一级节点");
+          return;
+        }
+        const result = await showAddNodeDialog(null);
+        if (!result) return;
+        await submitOperation({
+          type: "addNode",
+          parentId: null,
+          nodeType: "folder",
+          title: result.title,
+          content: "",
+          aclPatch: aclPatchFromAudience(result.audience)
+        }, "新增一级节点「" + result.title + "」");
+      }
+
       async function updateTaskAttr(nodeId, attrName, value) {
         await submitOperation({
           type: "updateAttrs",
@@ -4343,8 +4375,7 @@ export function renderHomePage(): string {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            role,
-            department: departmentForRole(role, existingUser ? existingUser.department : "")
+            role
           })
         });
         if (state.user && body.user && body.user.id === state.user.id) {
@@ -4354,37 +4385,6 @@ export function renderHomePage(): string {
         await loadView();
         render();
         setUserManagementStatus("身份已更新，权限视图已刷新");
-      }
-
-      async function updateUserDepartment(userId, department) {
-        setUserManagementStatus("正在更新部门...");
-        const body = await requestJson("/api/users/" + encodeURIComponent(userId), {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ department })
-        });
-        if (state.user && body.user && body.user.id === state.user.id) {
-          state.user = body.user;
-        }
-        await refreshSession();
-        await loadView();
-        render();
-        setUserManagementStatus("部门已更新，权限视图已刷新");
-      }
-
-      function departmentForRole(role, currentDepartment) {
-        if (role === "member" || role === "manager") {
-          return currentDepartment && currentDepartment !== "external" && currentDepartment !== "all"
-            ? currentDepartment
-            : "dev";
-        }
-        if (role === "guest") {
-          return "external";
-        }
-        if (role === "admin") {
-          return currentDepartment || "all";
-        }
-        return currentDepartment || "external";
       }
 
       async function deleteUserAccount(user) {
@@ -4460,8 +4460,8 @@ export function renderHomePage(): string {
           .map((node) => node.title + " (" + node.id + ")")
           .join("、");
         return (
-          "删除被拒绝：该父项目下存在更低权限用户仍可见的子项目。\\n" +
-          "请联系管理员申请权限，或者先处理 " + (childProjects || "相关子项目") + "。"
+          "删除被拒绝：该父项目下存在你无权删除的子项目。\\n" +
+          "请联系管理员申请高级删除冲突处理权限，或者先处理 " + (childProjects || "相关子项目") + "。"
         );
       }
 
@@ -4470,12 +4470,12 @@ export function renderHomePage(): string {
           .map((node) => "- " + node.title + " (" + node.id + ")")
           .join("\\n");
         const affectedUsers = impact.affectedUsers
-          .map((user) => "- " + user.name + " / " + user.role + " / " + user.department)
+          .map((user) => "- " + user.name + " / " + user.role)
           .join("\\n");
         return (
-          "删除已阻止：该子树包含其他用户可见内容。\\n" +
+          "删除已阻止：该子树包含当前用户无权删除的内容。\\n" +
           "将删除节点数：" + impact.deleteCount + "\\n" +
-          "其他用户可见节点：\\n" + (visibleNodes || "- 无") + "\\n" +
+          "冲突节点：\\n" + (visibleNodes || "- 无") + "\\n" +
           "受影响用户：\\n" + (affectedUsers || "- 无")
         );
       }
@@ -4494,7 +4494,7 @@ export function renderHomePage(): string {
           els.deleteDialog.setAttribute("aria-hidden", "false");
           setStatus(
             impact.blocksSilentDelete
-              ? "检测到其他用户可见内容，请选择处理方式"
+              ? "检测到无权直接删除的子节点，请选择处理方式"
               : "请确认删除方式"
           );
         });
@@ -4586,8 +4586,12 @@ export function renderHomePage(): string {
 
       function showAddNodeDialog(parentNode) {
         return new Promise((resolve) => {
-          els.addNodeParentInfo.textContent = "父节点：" + quotedNodeTitle(parentNode.title || parentNode.id) + " — 新节点会默认带任务优先级、经费预算和状态属性。";
-          els.addNodeTitle.value = "新任务节点";
+          const title = els.addNodeDialog.querySelector(".modal-title");
+          if (title) title.textContent = parentNode ? "添加子节点" : "添加一级项目空间";
+          els.addNodeParentInfo.textContent = parentNode
+            ? "父节点：" + quotedNodeTitle(parentNode.title || parentNode.id) + " — 第三级任务会默认带任务优先级、经费预算和状态属性。"
+            : "新节点将作为一级项目空间添加到完整树根部。";
+          els.addNodeTitle.value = parentNode ? "新任务节点" : "新项目空间";
           buildAddNodeAclArea();
           els.addNodeDialog.classList.remove("hidden");
           els.addNodeDialog.setAttribute("aria-hidden", "false");
@@ -4649,7 +4653,7 @@ export function renderHomePage(): string {
         return items
           .map((item) =>
             "name" in item
-              ? "- " + item.name + " / " + item.role + " / " + item.department
+              ? "- " + item.name + " / " + item.role
               : "- " + item.title + " (" + item.id + ")"
           )
           .join("\\n");
@@ -4967,6 +4971,14 @@ export function renderHomePage(): string {
           setStatus(error.message);
         }
       });
+      if (els.addRootNode) {
+        els.addRootNode.addEventListener("click", () =>
+          addRootNode().catch((error) => {
+            logOperationFailure({ type: "addNode", parentId: null, title: "一级节点" }, error);
+            setStatus(error.message);
+          })
+        );
+      }
       els.deleteDialogCancel.addEventListener("click", () => closeDeleteImpactDialog(null));
       els.deleteDialogKeepChildren.addEventListener("click", () => closeDeleteImpactDialog("keepChildren"));
       els.deleteDialogForce.addEventListener("click", () => closeDeleteImpactDialog("forceDelete"));
@@ -5128,22 +5140,40 @@ export function renderHomePage(): string {
         await syncOfflineQueue({ silent: true });
       }
 
-      function connectWebSocket() {
+      function connectWebSocket(options) {
         if (!state.token) return setStatus("请先登录");
         if (isSocketActive()) return setStatus("WebSocket 已连接或正在连接");
+        const reconnectingFromFailure =
+          (state.offline.connectionStatus === "stale" || state.offline.connectionStatus === "offline") &&
+          state.offline.lastPongAt > 0;
         const protocol = location.protocol === "https:" ? "wss:" : "ws:";
         const socket = new WebSocket(protocol + "//" + location.host + "/ws?token=" + encodeURIComponent(state.token));
         state.socket = socket;
         state.offline.connected = false;
         state.offline.connectionStatus = "connecting";
+        state.offline.reconnectingFromFailure = reconnectingFromFailure;
         renderSyncState();
-        setStatus("正在联网...");
+        if (!options || !options.auto) {
+          setStatus("正在联网...");
+        }
         socket.onmessage = (event) => {
           const message = JSON.parse(event.data);
           if (message.type === "pong") {
+            const wasReconnecting = state.offline.reconnectingFromFailure;
             state.offline.lastPongAt = Date.now();
             state.offline.connected = true;
             state.offline.connectionStatus = "connected";
+            state.offline.reconnectingFromFailure = false;
+            if (wasReconnecting) {
+              appendOperationLog({
+                kind: "remote",
+                title: "连接已恢复",
+                detail: "已收到服务器心跳响应，开始同步离线队列",
+                key: "network:recovered:" + state.offline.lastPongAt
+              });
+              renderOperationLogs();
+              setStatus("已重新连接，正在同步离线队列");
+            }
             renderSyncState();
             syncOfflineQueue({ silent: true }).catch((error) => setStatus(error.message));
             return;
@@ -5264,6 +5294,7 @@ export function renderHomePage(): string {
           if (state.socket !== socket) return;
           state.socket = null;
           state.offline.connected = false;
+          state.offline.reconnectingFromFailure = true;
           state.undo.undoInFlight = false;
           state.undo.redoInFlight = false;
           markCurrentUserSendingItemsPending("WebSocket 已断开，等待恢复联网后重试");
@@ -5280,6 +5311,7 @@ export function renderHomePage(): string {
           if (state.socket !== socket) return;
           state.socket = null;
           state.offline.connected = false;
+          state.offline.reconnectingFromFailure = true;
           state.undo.undoInFlight = false;
           state.undo.redoInFlight = false;
           state.offline.connectionStatus = "offline";
@@ -5300,6 +5332,21 @@ export function renderHomePage(): string {
       window.setInterval(() => {
         autoReconnectIfNeeded();
       }, RECONNECT_INTERVAL_MS);
+
+      window.addEventListener("online", () => {
+        appendOperationLog({
+          kind: "local",
+          title: "浏览器网络已恢复",
+          detail: "正在重新连接服务器",
+          key: "network:browser-online:" + Date.now()
+        });
+        renderOperationLogs();
+        autoReconnectIfNeeded();
+      });
+
+      window.addEventListener("offline", () => {
+        markConnectionUnavailable("浏览器报告网络已断开，操作会保留在离线队列");
+      });
 
       // ── Avatar ──
 

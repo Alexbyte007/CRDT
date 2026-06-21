@@ -6,6 +6,7 @@ export interface DeleteImpactVisibleNode {
   id: NodeId;
   title: string;
   visibleTo: string[];
+  reason: "not-deletable";
 }
 
 export interface DeleteImpactUser {
@@ -48,21 +49,19 @@ export function analyzeDeleteImpact(
   const visibleNodes: DeleteImpactVisibleNode[] = [];
 
   const deletedRootVisibleTo = usersWhoCanView(context, actor, root).map((user) => user.id);
-  const rootVisibleUserIds = new Set(deletedRootVisibleTo);
 
   for (const node of subtree.slice(1)) {
-    const visibleTo = usersWhoCanView(context, actor, node);
-    const visibleOutsideRootAudience = visibleTo.some((user) => !rootVisibleUserIds.has(user.id));
-    const hiddenFromActor = !context.policyEngine.canViewNode(actor, node);
-
-    if (visibleTo.length === 0 || (!hiddenFromActor && !visibleOutsideRootAudience)) {
+    if (context.policyEngine.canEditNode(actor, node, "deleteNode")) {
       continue;
     }
+
+    const visibleTo = usersWhoCanView(context, actor, node);
 
     visibleNodes.push({
       id: node.id,
       title: node.title,
-      visibleTo: visibleTo.map((user) => user.id)
+      visibleTo: visibleTo.map((user) => user.id),
+      reason: "not-deletable"
     });
 
     for (const user of visibleTo) {
@@ -81,7 +80,7 @@ export function analyzeDeleteImpact(
     deletedRootVisibleTo,
     visibleNodes,
     affectedUsers: Array.from(affectedUsersById.values()),
-    blocksSilentDelete: subtree.length > 1,
+    blocksSilentDelete: visibleNodes.length > 0,
     canResolveConflict: canResolveDeleteConflict(actor, root)
   };
 }
