@@ -175,7 +175,6 @@ describe("privacy view transform", () => {
       allowedRoles: ["admin", "manager", "member"],
       editableRoles: ["admin", "manager"],
       contentEditableRoles: ["admin", "manager"],
-      attributeEditableRoles: ["admin", "manager"],
       childAddableRoles: ["admin", "manager"],
       deletableRoles: ["admin", "manager"],
       allowedUsers: ["u-dev-manager"],
@@ -241,7 +240,6 @@ describe("privacy view transform", () => {
       allowedRoles: ["admin", "manager", "member", "guest"],
       editableRoles: ["admin", "manager", "member"],
       contentEditableRoles: ["admin", "manager", "member"],
-      attributeEditableRoles: ["admin", "manager", "member"],
       childAddableRoles: ["admin", "manager", "member"],
       deletableRoles: ["admin", "manager", "member"],
       allowedUsers: ["u-dev-member"],
@@ -349,7 +347,7 @@ describe("privacy view transform", () => {
     });
   });
 
-  it("filters task budget by role and enforces task attribute update permissions", () => {
+  it("shows task attrs to visible users and edits them with content permissions", () => {
     const crdt = createSampleDocument();
     const admin = user("u-admin");
     const manager = user("u-dev-manager");
@@ -372,9 +370,9 @@ describe("privacy view transform", () => {
     });
     expect(memberTask?.attrs).toMatchObject({
       priority: "B",
+      budget: 4000,
       taskStatus: "todo"
     });
-    expect(memberTask?.attrs).not.toHaveProperty("budget");
     expect(managerModule?.attrs).not.toHaveProperty("priority");
     expect(managerModule?.attrs).not.toHaveProperty("budget");
     expect(managerModule?.attrs).not.toHaveProperty("taskStatus");
@@ -392,35 +390,29 @@ describe("privacy view transform", () => {
       })
     ).toThrow(AccessControlError);
 
-    const memberStatusUpdate = putOperation(
+    const memberAttrUpdate = putOperation(
       crdt,
       member,
       {
         type: "updateAttrs",
         nodeId: "node-privacy-view-task",
         attrsPatch: {
+          priority: "A",
+          budget: 4300,
           taskStatus: "doing"
         }
       },
       { now: 32 }
     );
-    expect(memberStatusUpdate).toMatchObject({
+    expect(memberAttrUpdate).toMatchObject({
       type: "updateAttrs",
       nodeId: "node-privacy-view-task",
       attrsPatch: {
+        priority: "A",
+        budget: 4300,
         taskStatus: "doing"
       }
     });
-
-    expect(() =>
-      validateViewOperation(crdt, member, {
-        type: "updateAttrs",
-        nodeId: "node-privacy-view-task",
-        attrsPatch: {
-          budget: 9999
-        }
-      })
-    ).toThrow(AccessControlError);
 
     const managerBudgetUpdate = putOperation(
       crdt,
@@ -453,7 +445,7 @@ describe("privacy view transform", () => {
           type: "updateAcl",
           nodeId: "node-privacy-view-task",
           aclPatch: {
-            attributeEditableRoles: ["admin"]
+            contentEditableRoles: ["admin"]
           }
         },
         { now: 34 }
@@ -466,7 +458,7 @@ describe("privacy view transform", () => {
     );
     expect(restrictedManagerTask?.permissions.canEditPriority).toBe(false);
     expect(restrictedManagerTask?.permissions.canEditBudget).toBe(false);
-    expect(restrictedManagerTask?.permissions.canEditTaskStatus).toBe(true);
+    expect(restrictedManagerTask?.permissions.canEditTaskStatus).toBe(false);
 
     expect(() =>
       validateViewOperation(crdt, manager, {
@@ -478,24 +470,15 @@ describe("privacy view transform", () => {
       })
     ).toThrow(AccessControlError);
 
-    expect(
-      putOperation(
-        crdt,
-        manager,
-        {
-          type: "updateAttrs",
-          nodeId: "node-privacy-view-task",
-          attrsPatch: {
-            taskStatus: "done"
-          }
-        },
-        { now: 36 }
-      )
-    ).toMatchObject({
-      attrsPatch: {
-        taskStatus: "done"
-      }
-    });
+    expect(() =>
+      validateViewOperation(crdt, manager, {
+        type: "updateAttrs",
+        nodeId: "node-privacy-view-task",
+        attrsPatch: {
+          taskStatus: "done"
+        }
+      })
+    ).toThrow(AccessControlError);
   });
 
   it("allows admins to update node audience without exposing acl controls to ordinary users", () => {
@@ -510,7 +493,6 @@ describe("privacy view transform", () => {
       visibility: "public",
       allowedRoles: ["admin", "manager", "member", "guest"],
       contentEditableRoles: ["admin", "manager"],
-      attributeEditableRoles: ["admin", "manager"],
       childAddableRoles: ["admin", "manager"],
       deletableRoles: ["admin"],
       advancedPermissions: {

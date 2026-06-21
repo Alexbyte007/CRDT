@@ -3593,26 +3593,12 @@ export function renderHomePage(): string {
               "节点删除权限已更新"
             )
           );
-          const taskAttributePolicy = depth >= 2
-            ? renderAclSelect("谁能改优先级/预算", audienceFromRoles(node.acl.attributeEditableRoles), (audience) =>
-                updateNodeAcl(
-                  node.id,
-                  { attributeEditableRoles: rolesFromAudience(audience) },
-                  "任务属性修改权限已更新"
-                )
-              )
-            : null;
-          const operationPolicies = [editPolicy, addPolicy, deletePolicy].concat(
-            taskAttributePolicy ? [taskAttributePolicy] : []
-          );
+          const operationPolicies = [editPolicy, addPolicy, deletePolicy];
           visibilityPolicy.select.onChangeHook = () =>
             syncOperationAclControls(visibilityPolicy.select, operationPolicies);
           syncOperationAclControls(visibilityPolicy.select, operationPolicies);
           policyPanel.appendChild(visibilityPolicy.element);
           policyPanel.appendChild(editPolicy.element);
-          if (taskAttributePolicy) {
-            policyPanel.appendChild(taskAttributePolicy.element);
-          }
           policyPanel.appendChild(addPolicy.element);
           policyPanel.appendChild(deletePolicy.element);
           if (node.children && node.children.length > 0) {
@@ -4706,8 +4692,7 @@ export function renderHomePage(): string {
             allowedRoles: ["admin"],
             contentEditableRoles: ["admin"],
             childAddableRoles: ["admin"],
-            deletableRoles: ["admin"],
-            attributeEditableRoles: ["admin"]
+            deletableRoles: ["admin"]
           };
         }
         if (audience === "admin-manager") {
