@@ -63,8 +63,8 @@
         "visible": false
       },
       {
-        "name": "content hidden from guest unless public",
-        "match": "field == 'content' and (user.role != 'guest' or node.acl.visibility == 'public')",
+        "name": "content visible to users who can view the node",
+        "match": "field == 'content'",
         "visible": true
       },
       {
@@ -83,13 +83,8 @@
         "visible": true
       },
       {
-        "name": "task priority and status visible to users who can view the task",
-        "match": "field in ['attrs.priority', 'attrs.taskStatus'] and user.role in ['manager', 'member', 'guest']",
-        "visible": true
-      },
-      {
-        "name": "task budget visible to managers only",
-        "match": "field == 'attrs.budget' and user.role == 'manager'",
+        "name": "task attrs visible to users who can view the task",
+        "match": "field in ['attrs.priority', 'attrs.budget', 'attrs.taskStatus']",
         "visible": true
       }
     ]
@@ -124,9 +119,9 @@
         "attrs": ["tags", "status", "priority", "budget", "taskStatus"]
       },
       {
-        "name": "member can edit tags and task status only",
+        "name": "member can edit tags and visible task attrs",
         "match": "user.role == 'member'",
-        "attrs": ["tags", "taskStatus"]
+        "attrs": ["tags", "priority", "budget", "taskStatus"]
       }
     ]
   },

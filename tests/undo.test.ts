@@ -13,6 +13,7 @@ import {
 import { getDocumentSnapshot, getNodeSnapshot } from "../src/crdt/snapshot";
 import { defaultPolicyEngine } from "../src/access-control/default-policy";
 import { ServerUndoManager } from "../src/server/undo";
+import { applyRedoRequest, applyUndoRequest } from "../src/server/operations";
 import { AccessControlError, type User, type UserRole } from "../src/types";
 import type { CollaborationContext } from "../src/server/types";
 
@@ -279,6 +280,26 @@ describe("ServerUndoManager", () => {
     expect(memberEntry!.originalOp).toMatchObject({ nodeId: "node-offline-sync-task" });
   });
 
+  it("isolates undo stacks by editor session scope", () => {
+    const crdt = createSampleDocument();
+    const ctx = createTestContext(crdt);
+    const manager = user("manager");
+    const scopeA = "session-a";
+    const scopeB = "session-b";
+
+    ctx.undoManager.track(manager.id, {
+      type: "renameNode",
+      nodeId: "node-public",
+      title: "Scope A Edit",
+      actorId: manager.id,
+      timestamp: ctx.now()
+    }, ctx, scopeA);
+
+    expect(ctx.undoManager.canUndo(scopeA)).toBe(true);
+    expect(ctx.undoManager.canUndo(scopeB)).toBe(false);
+    expect(ctx.undoManager.canUndo(manager.id)).toBe(false);
+  });
+
   it("clears redo stack when new operation is tracked", () => {
     const crdt = createSampleDocument();
     const ctx = createTestContext(crdt);
@@ -490,6 +511,38 @@ describe("undo permission validation", () => {
     expect(target).toBeDefined();
     expect(ctx.policyEngine.canViewNode(user("manager"), target!)).toBe(true);
   });
+
+  it("skips invalid top undo entries and continues with the next valid entry", () => {
+    const crdt = createSampleDocument();
+    const ctx = createTestContext(crdt);
+    const manager = user("manager");
+    const originalTitle = getNodeSnapshot(crdt, "node-public")!.title;
+    const scope = "manager-session";
+
+    const validRename = {
+      type: "renameNode" as const,
+      nodeId: "node-public",
+      title: "Manager Valid Edit",
+      actorId: manager.id,
+      timestamp: ctx.now()
+    };
+    ctx.undoManager.track(manager.id, validRename, ctx, scope);
+    renameNode(crdt, validRename);
+
+    ctx.undoManager.track(manager.id, {
+      type: "renameNode",
+      nodeId: "node-finance",
+      title: "Invisible Invalid Edit",
+      actorId: manager.id,
+      timestamp: ctx.now()
+    }, ctx, scope);
+
+    const result = applyUndoRequest(ctx, manager, scope);
+
+    expect(result.originalOpType).toBe("renameNode");
+    expect(getNodeSnapshot(crdt, "node-public")!.title).toBe(originalTitle);
+    expect(ctx.undoManager.canUndo(scope)).toBe(false);
+  });
 });
 
 describe("undo/redo full cycle", () => {
@@ -609,5 +662,71 @@ describe("undo/redo full cycle", () => {
     const restored = getNodeSnapshot(crdt, "node-public");
     expect(restored).toBeDefined();
     expect(restored!.title).toBe(nodeBefore!.title);
+  });
+
+  it("keeps redo history after undo reaches the oldest operation and undo is clicked again", () => {
+    const crdt = createSampleDocument();
+    const ctx = createTestContext(crdt);
+    const manager = user("manager");
+    const scope = "manager-current-browser-session";
+    const operations = [1, 2, 3].map((index) => ({
+      type: "addNode" as const,
+      parentId: "node-public",
+      actorId: manager.id,
+      timestamp: ctx.now() + index,
+      node: {
+        id: `node-boundary-redo-${index}`,
+        type: "task" as const,
+        title: `Boundary Redo ${index}`,
+        content: "",
+        attrs: { department: "dev", ownerId: manager.id, status: "active" as const },
+        acl: {
+          visibility: "department" as const,
+          allowedRoles: ALLOWED_ROLES,
+          editableRoles: ["admin", "manager"] as UserRole[],
+          contentEditableRoles: ["admin", "manager"] as UserRole[],
+          childAddableRoles: ["admin", "manager"] as UserRole[],
+          deletableRoles: ["admin", "manager"] as UserRole[],
+          allowedUsers: [manager.id],
+          deniedUsers: []
+        },
+        createdBy: manager.id
+      }
+    }));
+
+    for (const operation of operations) {
+      ctx.undoManager.track(manager.id, operation, ctx, scope);
+      applyFullDocOperation(crdt, operation);
+    }
+
+    expect(ctx.undoManager.getUserEntries(scope).length).toBe(3);
+
+    applyUndoRequest(ctx, manager, scope);
+    applyUndoRequest(ctx, manager, scope);
+    applyUndoRequest(ctx, manager, scope);
+
+    expect(ctx.undoManager.canUndo(scope)).toBe(false);
+    expect(ctx.undoManager.getUserRedoEntries(scope).length).toBe(3);
+    for (const operation of operations) {
+      expect(getNodeSnapshot(crdt, operation.node.id)).toBeUndefined();
+      expect(crdt.tombstones.has(operation.node.id)).toBe(true);
+    }
+
+    expect(() => applyUndoRequest(ctx, manager, scope)).toThrow("Nothing to undo.");
+    expect(ctx.undoManager.getUserRedoEntries(scope).length).toBe(3);
+
+    applyRedoRequest(ctx, manager, scope);
+    applyRedoRequest(ctx, manager, scope);
+    applyRedoRequest(ctx, manager, scope);
+
+    for (const operation of operations) {
+      expect(getNodeSnapshot(crdt, operation.node.id)?.title).toBe(operation.node.title);
+      expect(crdt.tombstones.has(operation.node.id)).toBe(false);
+    }
+    expect(ctx.undoManager.getUserEntries(scope).length).toBe(3);
+    expect(ctx.undoManager.canRedo(scope)).toBe(false);
+
+    expect(() => applyRedoRequest(ctx, manager, scope)).toThrow("Nothing to redo.");
+    expect(ctx.undoManager.getUserEntries(scope).length).toBe(3);
   });
 });

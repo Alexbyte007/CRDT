@@ -1012,7 +1012,6 @@ export function renderHomePage(): string {
 
         <div class="nav-list">
           <button class="nav-item" id="refresh"><span>⟳</span>刷新视图</button>
-          <button class="nav-item" id="connect"><span>⚡</span>模拟断网</button>
           <button class="nav-item" id="syncOffline"><span>↥</span>同步离线操作</button>
         </div>
         <div class="status" id="status" style="color: var(--muted); font-size: 12px; margin-top: 8px;"></div>
@@ -1287,7 +1286,6 @@ export function renderHomePage(): string {
         },
         offline: {
           connected: false,
-          simulated: false,
           connectionStatus: "offline",
           lastPongAt: 0,
           lastSyncAt: 0,
@@ -1300,7 +1298,9 @@ export function renderHomePage(): string {
           canUndo: false,
           canRedo: false,
           undoCount: 0,
-          redoCount: 0
+          redoCount: 0,
+          undoInFlight: false,
+          redoInFlight: false
         }
       };
 
@@ -1322,7 +1322,6 @@ export function renderHomePage(): string {
         loginStatus: document.querySelector("#loginStatus"),
         logout: document.querySelector("#logout"),
         refresh: document.querySelector("#refresh"),
-        connect: document.querySelector("#connect"),
         headerSession: document.querySelector("#headerSession"),
         sessionUser: document.querySelector("#sessionUser"),
         policyVersion: document.querySelector("#policyVersion"),
@@ -1519,7 +1518,28 @@ export function renderHomePage(): string {
         }
         requestOptions.headers = headers;
         const response = await fetch(url, requestOptions);
-        const body = await response.json();
+        const rawBody = await response.text();
+        let body = {};
+        if (rawBody.trim()) {
+          try {
+            body = JSON.parse(rawBody);
+          } catch (error) {
+            if (isLikelyNetworkError(error)) {
+              throw error;
+            }
+            throw new TypeError("Network response ended before a valid JSON body was available.");
+          }
+        } else if (!response.ok) {
+          body = {
+            ok: false,
+            error: {
+              name: "NetworkError",
+              message: "Network response ended before a valid JSON body was available."
+            }
+          };
+        } else {
+          throw new TypeError("Network response ended before a valid JSON body was available.");
+        }
         if (!response.ok || body.ok === false) {
           const errorName = body.error ? body.error.name : "";
           if (errorName === "AuthenticationError") {
@@ -1536,7 +1556,6 @@ export function renderHomePage(): string {
           state.socket.close();
           state.socket = null;
         }
-        state.offline.simulated = false;
         state.token = "";
         setLoginStatus("正在登录...");
         const body = await requestJson("/api/login", {
@@ -1577,7 +1596,6 @@ export function renderHomePage(): string {
           state.view = null;
           state.stateVector = "";
           state.offline.connected = false;
-          state.offline.simulated = false;
           state.offline.connectionStatus = "offline";
           state.offline.lastPongAt = 0;
           state.offline.lastSyncAt = 0;
@@ -1900,6 +1918,34 @@ export function renderHomePage(): string {
         return null;
       }
 
+      function formatBatchSyncResult(result, operations) {
+        const envelope = result && result.id ? findQueuedEnvelope(result.id, operations) : null;
+        const summary = envelope && envelope.operation ? formatViewOperation(envelope.operation) : null;
+        const title = summary ? summary.title : (result.nodeTitle || result.operationType || "离线操作");
+        if (result.status === "applied") {
+          return {
+            kind: "remote",
+            title: "已合并：" + title,
+            detail: result.reason || (summary ? summary.detail || "" : "已成功同步"),
+            key: "remote:batch-result:" + (result.id || Date.now())
+          };
+        }
+        if (result.status === "skipped") {
+          return {
+            kind: "remote",
+            title: "已跳过：" + title,
+            detail: result.reason || "重复提交，服务端已忽略",
+            key: "remote:batch-result:" + (result.id || Date.now())
+          };
+        }
+        return {
+          kind: "remote",
+          title: "已拒绝：" + title,
+          detail: result.reason || (result.error && result.error.message) || "服务端拒绝该操作",
+          key: "remote:batch-result:" + (result.id || Date.now())
+        };
+      }
+
       function renderOnlineIndicator() {
         if (!els.topbarCenter) return;
         // Logged in: use real-time WebSocket data (self excluded, so +1)
@@ -1996,10 +2042,8 @@ export function renderHomePage(): string {
           : "-";
         els.syncOffline.disabled = !state.token || syncableQueueForCurrentUser().length === 0;
         els.refresh.disabled = !state.token;
-        els.connect.disabled = !state.token;
-        els.connect.textContent = state.offline.simulated ? "恢复联网" : "模拟断网";
-        els.undoBtn.disabled = !state.undo.canUndo;
-        els.redoBtn.disabled = !state.undo.canRedo;
+        els.undoBtn.disabled = !state.undo.canUndo || state.undo.undoInFlight || state.undo.redoInFlight;
+        els.redoBtn.disabled = !state.undo.canRedo || state.undo.undoInFlight || state.undo.redoInFlight;
         els.undoBtn.title = state.undo.canUndo
           ? "撤销 (Ctrl+Z) — " + state.undo.undoCount + " 条可撤销"
           : "撤销 (Ctrl+Z)";
@@ -2009,9 +2053,6 @@ export function renderHomePage(): string {
       }
 
       function connectionStatusLabel() {
-        if (state.offline.simulated || state.offline.connectionStatus === "simulated-offline") {
-          return "模拟离线";
-        }
         if (state.offline.connectionStatus === "stale") return "心跳超时";
         if (state.offline.connectionStatus === "connected") return "已连接";
         if (state.offline.connectionStatus === "connecting") return "连接中";
@@ -3552,26 +3593,12 @@ export function renderHomePage(): string {
               "节点删除权限已更新"
             )
           );
-          const taskAttributePolicy = depth >= 2
-            ? renderAclSelect("谁能改优先级/预算", audienceFromRoles(node.acl.attributeEditableRoles), (audience) =>
-                updateNodeAcl(
-                  node.id,
-                  { attributeEditableRoles: rolesFromAudience(audience) },
-                  "任务属性修改权限已更新"
-                )
-              )
-            : null;
-          const operationPolicies = [editPolicy, addPolicy, deletePolicy].concat(
-            taskAttributePolicy ? [taskAttributePolicy] : []
-          );
+          const operationPolicies = [editPolicy, addPolicy, deletePolicy];
           visibilityPolicy.select.onChangeHook = () =>
             syncOperationAclControls(visibilityPolicy.select, operationPolicies);
           syncOperationAclControls(visibilityPolicy.select, operationPolicies);
           policyPanel.appendChild(visibilityPolicy.element);
           policyPanel.appendChild(editPolicy.element);
-          if (taskAttributePolicy) {
-            policyPanel.appendChild(taskAttributePolicy.element);
-          }
           policyPanel.appendChild(addPolicy.element);
           policyPanel.appendChild(deletePolicy.element);
           if (node.children && node.children.length > 0) {
@@ -4024,7 +4051,6 @@ export function renderHomePage(): string {
 
       function isConnectionUsable() {
         return (
-          !state.offline.simulated &&
           state.offline.connectionStatus === "connected" &&
           isSocketOpen()
         );
@@ -4034,7 +4060,7 @@ export function renderHomePage(): string {
         const message = error && error.message ? String(error.message) : String(error || "");
         return (
           error instanceof TypeError ||
-          /failed to fetch|networkerror|load failed|fetch|network|socket|offline|断网|离线/i.test(message)
+          /failed to fetch|networkerror|load failed|fetch|network|socket|offline|断网|离线|unexpected end of json input|ended before a valid json body/i.test(message)
         );
       }
 
@@ -4064,6 +4090,14 @@ export function renderHomePage(): string {
           key: key || "offline-queued:" + Date.now()
         });
         renderOperationLogs();
+      }
+
+      function logQueuedWaiting(envelope, summary, detail) {
+        logOfflineQueued(
+          "等待同步：" + (summary ? summary.title : "离线操作"),
+          detail || "操作已进入离线队列，等待恢复联网后同步",
+          "offline:queued:" + envelope.id
+        );
       }
 
       function isSocketActive() {
@@ -4372,19 +4406,17 @@ export function renderHomePage(): string {
         const nodeTitle = resolveNodeTitle(nodeId);
         const confirmed = await showConfirmDialog("删除节点", "确定要删除节点「" + nodeTitle + "」吗？");
         if (!confirmed) return;
+        if (!isConnectionUsable()) {
+          await enqueueOfflineDelete(nodeId);
+          return;
+        }
         let impact;
         try {
           impact = await requestJson("/api/delete-impact?nodeId=" + encodeURIComponent(nodeId));
         } catch (error) {
           if (isLikelyNetworkError(error) || !isConnectionUsable()) {
-            await submitOperation({ type: "deleteNode", nodeId });
-            delete state.editing.drafts[nodeId];
-            setStatus("当前离线，删除操作已进入队列，重连后会重新校验");
-            logOfflineQueued(
-              "删除操作已进入离线队列",
-              "重连后服务端会重新分析删除影响",
-              "offline:delete-impact:" + nodeId + ":" + Date.now()
-            );
+            markConnectionUnavailable("删除影响分析请求失败，删除操作已保留在离线队列");
+            await enqueueOfflineDelete(nodeId);
             return;
           }
           throw error;
@@ -4415,6 +4447,12 @@ export function renderHomePage(): string {
 
         await submitOperation({ type: "deleteNode", nodeId, confirmedImpact: true });
         delete state.editing.drafts[nodeId];
+      }
+
+      async function enqueueOfflineDelete(nodeId) {
+        await submitOperation({ type: "deleteNode", nodeId });
+        delete state.editing.drafts[nodeId];
+        setStatus("当前离线，删除操作已进入队列，重连后会重新校验");
       }
 
       function formatDeleteRejectedMessage(impact) {
@@ -4654,8 +4692,7 @@ export function renderHomePage(): string {
             allowedRoles: ["admin"],
             contentEditableRoles: ["admin"],
             childAddableRoles: ["admin"],
-            deletableRoles: ["admin"],
-            attributeEditableRoles: ["admin"]
+            deletableRoles: ["admin"]
           };
         }
         if (audience === "admin-manager") {
@@ -4711,13 +4748,11 @@ export function renderHomePage(): string {
             setStatus("操作已发送，等待确认");
           } else {
             setStatus("网络不可用，操作已进入离线队列");
+            logQueuedWaiting(envelope, summary, "发送失败，操作已保留在离线队列");
           }
-        } else if (state.offline.simulated) {
-          setStatus("模拟离线中，操作已进入队列");
-          logOfflineQueued(summary.title, "已进入离线队列，等待恢复联网后同步", "offline:queued:" + envelope.id);
         } else {
           setStatus("WebSocket 离线，操作已进入队列");
-          logOfflineQueued(summary.title, "已进入离线队列，等待恢复联网后同步", "offline:queued:" + envelope.id);
+          logQueuedWaiting(envelope, summary);
         }
       }
 
@@ -4741,6 +4776,7 @@ export function renderHomePage(): string {
             message: error && error.message ? error.message : String(error)
           };
           saveOfflineQueue();
+          markConnectionUnavailable("操作发送失败，操作已保留在离线队列");
           logOfflineQueued("网络已断开", "操作已留在离线队列，等待恢复联网", "offline:send-failed:" + envelope.id);
           return false;
         }
@@ -4751,7 +4787,16 @@ export function renderHomePage(): string {
           setStatus("连接不可用，无法撤销");
           return;
         }
-        state.socket.send(JSON.stringify({ type: "undo" }));
+        if (state.undo.undoInFlight || state.undo.redoInFlight) return;
+        state.undo.undoInFlight = true;
+        renderSyncState();
+        try {
+          state.socket.send(JSON.stringify({ type: "undo" }));
+        } catch (error) {
+          state.undo.undoInFlight = false;
+          renderSyncState();
+          setStatus(error && error.message ? error.message : "撤销发送失败");
+        }
       }
 
       function sendRedoRequest() {
@@ -4759,7 +4804,16 @@ export function renderHomePage(): string {
           setStatus("连接不可用，无法重做");
           return;
         }
-        state.socket.send(JSON.stringify({ type: "redo" }));
+        if (state.undo.undoInFlight || state.undo.redoInFlight) return;
+        state.undo.redoInFlight = true;
+        renderSyncState();
+        try {
+          state.socket.send(JSON.stringify({ type: "redo" }));
+        } catch (error) {
+          state.undo.redoInFlight = false;
+          renderSyncState();
+          setStatus(error && error.message ? error.message : "重做发送失败");
+        }
       }
 
       function updateUndoState() {
@@ -4781,7 +4835,7 @@ export function renderHomePage(): string {
         // Ctrl+Z (undo)
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !event.shiftKey) {
           event.preventDefault();
-          if (state.undo.canUndo) {
+          if (state.undo.canUndo && !state.undo.undoInFlight && !state.undo.redoInFlight) {
             sendUndoRequest();
           }
           return;
@@ -4789,7 +4843,7 @@ export function renderHomePage(): string {
         // Ctrl+Y or Ctrl+Shift+Z (redo)
         if ((event.ctrlKey || event.metaKey) && (event.key.toLowerCase() === "y" || (event.key.toLowerCase() === "z" && event.shiftKey))) {
           event.preventDefault();
-          if (state.undo.canRedo) {
+          if (state.undo.canRedo && !state.undo.undoInFlight && !state.undo.redoInFlight) {
             sendRedoRequest();
           }
           return;
@@ -4798,10 +4852,10 @@ export function renderHomePage(): string {
 
       // Undo/Redo button click handlers
       els.undoBtn.addEventListener("click", () => {
-        if (state.undo.canUndo) sendUndoRequest();
+        if (state.undo.canUndo && !state.undo.undoInFlight && !state.undo.redoInFlight) sendUndoRequest();
       });
       els.redoBtn.addEventListener("click", () => {
-        if (state.undo.canRedo) sendRedoRequest();
+        if (state.undo.canRedo && !state.undo.undoInFlight && !state.undo.redoInFlight) sendRedoRequest();
       });
 
       async function syncOfflineQueue(options) {
@@ -4850,6 +4904,14 @@ export function renderHomePage(): string {
               failure.key = "failed:batch:" + (rejected.id || failure.title);
               appendOperationLog(failure);
             }
+          }
+          if (Array.isArray(body.results) && body.results.length > 0) {
+            if ((!body.rejected || body.rejected.length === 0) && (!options || !options.silent)) {
+              setStatus("离线队列已同步");
+            }
+            for (const result of body.results) {
+              appendOperationLog(formatBatchSyncResult(result, operations));
+            }
           } else if (!options || !options.silent) {
             setStatus("离线队列已同步");
             appendOperationLog({
@@ -4873,6 +4935,7 @@ export function renderHomePage(): string {
           }
           saveOfflineQueue();
           if (isLikelyNetworkError(error)) {
+            markConnectionUnavailable("离线队列同步失败，操作已保留并等待自动重试");
             setStatus("网络不可用，离线队列已保留，稍后会自动重试");
             logOfflineQueued("同步暂缓", "网络不可用，等待恢复联网后继续同步", "offline:sync-paused:" + Date.now());
           } else if (!options || !options.silent) {
@@ -4994,7 +5057,7 @@ export function renderHomePage(): string {
         const socket = state.socket;
         state.socket = null;
         state.offline.connected = false;
-        state.offline.connectionStatus = state.offline.simulated ? "simulated-offline" : "offline";
+        state.offline.connectionStatus = "offline";
         markCurrentUserSendingItemsPending("连接断开，等待恢复联网后重试");
         if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
           socket.close();
@@ -5005,36 +5068,8 @@ export function renderHomePage(): string {
         }
       }
 
-      function toggleSimulatedNetwork() {
-        if (!state.token) return setStatus("请先登录");
-        if (state.offline.simulated) {
-          state.offline.simulated = false;
-          state.offline.connectionStatus = "offline";
-          appendOperationLog({
-            kind: "local",
-            title: "恢复联网",
-            detail: "准备重连 WebSocket 并同步离线队列",
-            key: "network:online:" + Date.now()
-          });
-          renderOperationLogs();
-          renderSyncState();
-          connectWebSocket();
-          return;
-        }
-        state.offline.simulated = true;
-        state.offline.connectionStatus = "simulated-offline";
-        appendOperationLog({
-          kind: "local",
-          title: "模拟断网",
-          detail: "已暂停 WebSocket 实时同步",
-          key: "network:offline:" + Date.now()
-        });
-        renderOperationLogs();
-        disconnectWebSocket("已切换为模拟离线，后续操作会进入离线队列");
-      }
-
       function sendHeartbeat() {
-        if (!state.token || state.offline.simulated || !isSocketOpen()) return;
+        if (!state.token || !isSocketOpen()) return;
         try {
           state.socket.send(JSON.stringify({ type: "ping" }));
         } catch {
@@ -5042,12 +5077,11 @@ export function renderHomePage(): string {
         }
       }
 
-      function markConnectionStale(message) {
-        if (state.offline.simulated) return;
+      function markConnectionStale(message, title) {
         if (state.offline.connectionStatus !== "stale") {
           appendOperationLog({
             kind: "failed",
-            title: "心跳超时，进入离线",
+            title: title || "心跳超时，进入离线",
             detail: message || "超过 " + Math.round(HEARTBEAT_TIMEOUT_MS / 1000) + " 秒未收到服务器响应",
             key: "network:stale:" + Date.now()
           });
@@ -5064,8 +5098,15 @@ export function renderHomePage(): string {
         renderSyncState();
       }
 
+      function markConnectionUnavailable(message) {
+        markConnectionStale(
+          message || "操作发送失败，连接可能已经断开",
+          "连接异常，进入等待同步"
+        );
+      }
+
       function checkHeartbeatTimeout() {
-        if (!state.token || state.offline.simulated) return;
+        if (!state.token) return;
         if (!isSocketOpen()) return;
         if (!state.offline.lastPongAt) return;
         if (Date.now() - state.offline.lastPongAt > HEARTBEAT_TIMEOUT_MS) {
@@ -5074,7 +5115,7 @@ export function renderHomePage(): string {
       }
 
       function autoReconnectIfNeeded() {
-        if (!state.token || state.offline.simulated || isSocketActive()) return;
+        if (!state.token || isSocketActive()) return;
         connectWebSocket({ auto: true });
       }
 
@@ -5089,7 +5130,6 @@ export function renderHomePage(): string {
 
       function connectWebSocket() {
         if (!state.token) return setStatus("请先登录");
-        if (state.offline.simulated) return setStatus("当前处于模拟离线，请先点击恢复联网");
         if (isSocketActive()) return setStatus("WebSocket 已连接或正在连接");
         const protocol = location.protocol === "https:" ? "wss:" : "ws:";
         const socket = new WebSocket(protocol + "//" + location.host + "/ws?token=" + encodeURIComponent(state.token));
@@ -5139,6 +5179,8 @@ export function renderHomePage(): string {
               });
           }
           if (message.type === "undoApplied") {
+            state.undo.undoInFlight = false;
+            state.undo.redoInFlight = false;
             state.view = message.view;
             state.stateVector = message.stateVector || state.stateVector;
             state.policyVersion = message.policyVersion || state.policyVersion;
@@ -5161,6 +5203,8 @@ export function renderHomePage(): string {
               });
           }
           if (message.type === "redoApplied") {
+            state.undo.undoInFlight = false;
+            state.undo.redoInFlight = false;
             state.view = message.view;
             state.stateVector = message.stateVector || state.stateVector;
             state.policyVersion = message.policyVersion || state.policyVersion;
@@ -5190,6 +5234,8 @@ export function renderHomePage(): string {
             renderSyncState();
           }
           if (message.type === "error") {
+            state.undo.undoInFlight = false;
+            state.undo.redoInFlight = false;
             appendOperationLog({
               kind: "failed",
               title: "操作失败：" + message.error.message,
@@ -5197,6 +5243,8 @@ export function renderHomePage(): string {
               coalesceKey: "failed:socket:" + message.error.message
             });
             renderOperationLogs();
+            updateUndoState();
+            renderSyncState();
             setStatus(message.error.message);
             if (message.error.name === "AuthenticationError") {
               logout();
@@ -5216,31 +5264,29 @@ export function renderHomePage(): string {
           if (state.socket !== socket) return;
           state.socket = null;
           state.offline.connected = false;
+          state.undo.undoInFlight = false;
+          state.undo.redoInFlight = false;
           markCurrentUserSendingItemsPending("WebSocket 已断开，等待恢复联网后重试");
           if (event.code === 4001) {
             setLoginStatus("该账号已在其他地方登录，当前会话已失效。");
             logout();
             return;
           }
-          state.offline.connectionStatus = state.offline.simulated ? "simulated-offline" : "offline";
+          state.offline.connectionStatus = "offline";
           renderSyncState();
-          if (!state.offline.simulated) {
-            setStatus("WebSocket 已断开");
-          }
+          setStatus("WebSocket 已断开");
         };
         socket.onerror = () => {
           if (state.socket !== socket) return;
           state.socket = null;
           state.offline.connected = false;
+          state.undo.undoInFlight = false;
+          state.undo.redoInFlight = false;
           state.offline.connectionStatus = "offline";
           markCurrentUserSendingItemsPending("WebSocket 错误，等待恢复联网后重试");
           renderSyncState();
         };
       }
-
-      els.connect.addEventListener("click", () => {
-        toggleSimulatedNetwork();
-      });
 
       window.setInterval(() => {
         sendHeartbeat();

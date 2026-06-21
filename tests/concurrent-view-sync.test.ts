@@ -287,6 +287,25 @@ describe("concurrent heterogeneous view sync", () => {
 
     const snapshot = getDocumentSnapshot(crdt);
     expect(result.applied).toEqual(["offline-valid-add"]);
+    expect(result.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "offline-valid-add",
+          status: "applied",
+          operationType: "addNode",
+          nodeTitle: "仍然合法的离线新增"
+        }),
+        expect.objectContaining({
+          id: "offline-rename-deleted",
+          status: "rejected",
+          operationType: "renameNode",
+          nodeId: "node-module-a",
+          error: expect.objectContaining({
+            code: "TARGET_DELETED"
+          })
+        })
+      ])
+    );
     expect(result.rejected).toHaveLength(1);
     expect(result.rejected[0]).toMatchObject({
       id: "offline-rename-deleted",

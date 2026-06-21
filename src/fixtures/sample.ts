@@ -872,7 +872,6 @@ interface CreateNodeInput {
   contentEditableRoles?: NewTreeNode["acl"]["contentEditableRoles"];
   childAddableRoles?: NewTreeNode["acl"]["childAddableRoles"];
   deletableRoles?: NewTreeNode["acl"]["deletableRoles"];
-  attributeEditableRoles?: NewTreeNode["acl"]["attributeEditableRoles"];
   allowedUsers?: string[];
   deniedUsers?: string[];
   attrsPatch?: Partial<NewTreeNode["attrs"]>;
@@ -902,7 +901,6 @@ function createNode(input: CreateNodeInput): NewTreeNode {
       contentEditableRoles: input.contentEditableRoles ?? input.editableRoles,
       childAddableRoles: input.childAddableRoles ?? input.editableRoles,
       deletableRoles: input.deletableRoles ?? input.editableRoles,
-      attributeEditableRoles: input.attributeEditableRoles ?? input.editableRoles,
       allowedUsers: input.allowedUsers ?? [],
       deniedUsers: input.deniedUsers ?? []
     },
