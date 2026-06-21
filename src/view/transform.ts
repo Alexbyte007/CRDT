@@ -217,7 +217,6 @@ function projectNode(
       contentEditableRoles: node.acl.contentEditableRoles ?? node.acl.editableRoles,
       childAddableRoles: node.acl.childAddableRoles ?? node.acl.editableRoles,
       deletableRoles: node.acl.deletableRoles ?? node.acl.editableRoles,
-      attributeEditableRoles: node.acl.attributeEditableRoles ?? node.acl.editableRoles,
       advancedPermissions: normalizeAdvancedPermissions(node.acl.advancedPermissions)
     };
   }
@@ -274,9 +273,9 @@ function buildViewPermissions(
     canRename: policyEngine.canEditNode(user, node, "renameNode"),
     canEditContent: policyEngine.canEditNode(user, node, "updateContent"),
     canEditAttrs: depth >= 2 && policyEngine.canEditNode(user, node, "updateAttrs"),
-    canEditPriority: depth >= 2 && policyEngine.canEditAttr(user, node, "priority"),
-    canEditBudget: depth >= 2 && policyEngine.canEditAttr(user, node, "budget"),
-    canEditTaskStatus: depth >= 2 && policyEngine.canEditAttr(user, node, "taskStatus"),
+    canEditPriority: depth >= 2 && policyEngine.canEditNode(user, node, "updateContent"),
+    canEditBudget: depth >= 2 && policyEngine.canEditNode(user, node, "updateContent"),
+    canEditTaskStatus: depth >= 2 && policyEngine.canEditNode(user, node, "updateContent"),
     canEditAcl: policyEngine.canEditNode(user, node, "updateAcl")
   };
 }
@@ -293,7 +292,6 @@ function sanitizeAclPatch(
     | "contentEditableRoles"
     | "childAddableRoles"
     | "deletableRoles"
-    | "attributeEditableRoles"
     | "advancedPermissions"
   >
 ): Pick<
@@ -303,7 +301,6 @@ function sanitizeAclPatch(
   | "contentEditableRoles"
   | "childAddableRoles"
   | "deletableRoles"
-  | "attributeEditableRoles"
   | "advancedPermissions"
 > {
   const result: Pick<
@@ -313,7 +310,6 @@ function sanitizeAclPatch(
     | "contentEditableRoles"
     | "childAddableRoles"
     | "deletableRoles"
-    | "attributeEditableRoles"
     | "advancedPermissions"
   > = {};
   if (aclPatch.visibility !== undefined) {
@@ -322,7 +318,7 @@ function sanitizeAclPatch(
     }
     result.visibility = aclPatch.visibility;
   }
-  for (const key of ["allowedRoles", "contentEditableRoles", "childAddableRoles", "deletableRoles", "attributeEditableRoles"] as const) {
+  for (const key of ["allowedRoles", "contentEditableRoles", "childAddableRoles", "deletableRoles"] as const) {
     if (aclPatch[key] !== undefined) {
       result[key] = sanitizeRoleList(aclPatch[key], key);
     }
@@ -457,11 +453,6 @@ function buildFullAddNodeOperation(
       contentEditableRoles: resolveOperationRoleListDefault(
         defaults.editableRoles,
         parent.acl.contentEditableRoles ?? parent.acl.editableRoles,
-        creatorAndHigherRoles
-      ),
-      attributeEditableRoles: resolveOperationRoleListDefault(
-        defaults.editableRoles,
-        parent.acl.attributeEditableRoles ?? parent.acl.editableRoles,
         creatorAndHigherRoles
       ),
       childAddableRoles: resolveOperationRoleListDefault(
