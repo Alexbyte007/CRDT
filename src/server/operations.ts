@@ -103,6 +103,19 @@ function preflightViewOperation(
   const targetId = operation.type === "addNode" ? operation.parentId : operation.nodeId;
   const targetKind = operation.type === "addNode" ? "parent" : "target";
 
+  if (operation.type === "addNode" && operation.parentId === null) {
+    if (user.role !== "admin") {
+      throw new AccessControlError(
+        `Offline operation rejected: ${user.id} is not allowed to add root nodes.`
+      );
+    }
+    return;
+  }
+
+  if (targetId === null) {
+    throw new AccessControlError("Offline operation rejected: operation target is missing.");
+  }
+
   if (nodeIsDeleted(context.crdt, targetId)) {
     throw new AccessControlError(
       `Offline operation rejected: ${targetKind} node ${targetId} was deleted before reconnect.`
@@ -145,8 +158,8 @@ function preflightViewOperation(
       }
       throw new AccessControlError(
         impact.canResolveConflict
-          ? `Delete rejected: descendant nodes are visible to broader audiences. Confirm the impact before cascading deletion: ${nodeList}.`
-          : `Delete rejected: descendant nodes are visible to broader audiences. Contact an administrator or handle these child projects first: ${nodeList}.`
+          ? `Delete rejected: some descendant nodes are not deletable by this user. Confirm the impact before cascading deletion: ${nodeList}.`
+          : `Delete rejected: some descendant nodes are not deletable by this user. Contact an administrator or handle these child projects first: ${nodeList}.`
       );
     }
   }
@@ -251,7 +264,7 @@ function summarizeBatchOperation(
     return { id: envelope?.id };
   }
 
-  const nodeId = operation.type === "addNode" ? operation.parentId : operation.nodeId;
+  const nodeId = operation.type === "addNode" ? operation.parentId ?? undefined : operation.nodeId;
   const existing = nodeId ? getNodeSnapshot(context.crdt, nodeId) : undefined;
   const nodeTitle =
     operation.type === "addNode"

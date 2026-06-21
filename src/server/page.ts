@@ -1050,6 +1050,7 @@ export function renderHomePage(): string {
                 <h3>项目空间</h3>
                 <p>管理和查看协同树节点。</p>
               </div>
+              <button id="addRootNode" type="button" class="btn small secondary hidden">添加一级节点</button>
             </div>
             <ul id="tree" class="tree tree-workspace"></ul>
           </section>
@@ -1336,6 +1337,7 @@ export function renderHomePage(): string {
         syncOffline: document.querySelector("#syncOffline"),
         status: document.querySelector("#status"),
         tree: document.querySelector("#tree"),
+        addRootNode: document.querySelector("#addRootNode"),
         userManagement: document.querySelector("#userManagement"),
         userRows: document.querySelector("#userRows"),
         userManagementStatus: document.querySelector("#userManagementStatus"),
@@ -1732,8 +1734,32 @@ export function renderHomePage(): string {
               '</div>';
           }).join('') + '</div>';
         }
-        if (els.localLogList) els.localLogList.innerHTML = formatLog(state.localLog, "还没有本地编辑。");
+        if (els.localLogList) {
+          els.localLogList.innerHTML = formatLog(localLogWithQueueEntries(), "还没有本地编辑。");
+        }
         if (els.remoteLogList) els.remoteLogList.innerHTML = formatLog(state.remoteLog, "等待后端返回或 WebSocket 更新。");
+      }
+
+      function localLogWithQueueEntries() {
+        const entries = state.localLog.slice();
+        const existingKeys = new Set(entries.map((entry) => entry.key).filter(Boolean));
+        for (const item of queueForCurrentUser()) {
+          if (item.status !== "pending" && item.status !== "sending") continue;
+          const key = "queue-visible:" + item.id + ":" + item.status;
+          if (existingKeys.has(key)) continue;
+          const summary = formatViewOperation(item.operation);
+          entries.push({
+            kind: "local",
+            operator: state.user ? state.user.name : "",
+            title: (item.status === "sending" ? "正在发送：" : "等待同步：") + summary.title,
+            detail: summary.detail || (item.status === "sending" ? "等待服务端确认" : "操作已保留在离线队列"),
+            time: new Date(item.createdAt || Date.now()).toLocaleTimeString("zh-CN", { hour12: false }),
+            createdAt: item.createdAt || Date.now(),
+            key,
+            coalesceKey: ""
+          });
+        }
+        return entries;
       }
 
       function findViewNodeById(nodeId, nodes) {
@@ -1783,6 +1809,12 @@ export function renderHomePage(): string {
 
         if (operation.type === "addNode" || operation.type === "insertNode") {
           const childTitle = operation.title || "新节点";
+          if (operation.parentId === null) {
+            return {
+              title: "新增一级节点「" + childTitle + "」",
+              detail: "添加到项目空间根部"
+            };
+          }
           const parentTitle = resolveNodeTitle(operation.parentId);
           return {
             title: "新增子节点「" + childTitle + "」",
@@ -2006,6 +2038,7 @@ export function renderHomePage(): string {
         renderUserManagement();
         renderSyncState();
         renderOperationLogs();
+        renderRootActions();
         if (!state.view) {
           renderMarkdownEditorDrawer();
           restoreEditorFocus(focus);
@@ -2050,6 +2083,13 @@ export function renderHomePage(): string {
         els.redoBtn.title = state.undo.canRedo
           ? "重做 (Ctrl+Y) — " + state.undo.redoCount + " 条可重做"
           : "重做 (Ctrl+Y)";
+      }
+
+      function renderRootActions() {
+        if (!els.addRootNode) return;
+        const canAddRoot = Boolean(state.user && state.user.role === "admin");
+        els.addRootNode.classList.toggle("hidden", !canAddRoot);
+        els.addRootNode.disabled = !canAddRoot;
       }
 
       function connectionStatusLabel() {
@@ -4301,6 +4341,23 @@ export function renderHomePage(): string {
         });
       }
 
+      async function addRootNode() {
+        if (!state.user || state.user.role !== "admin") {
+          setStatus("只有管理员可以添加一级节点");
+          return;
+        }
+        const result = await showAddNodeDialog(null);
+        if (!result) return;
+        await submitOperation({
+          type: "addNode",
+          parentId: null,
+          nodeType: "folder",
+          title: result.title,
+          content: "",
+          aclPatch: aclPatchFromAudience(result.audience)
+        }, "新增一级节点「" + result.title + "」");
+      }
+
       async function updateTaskAttr(nodeId, attrName, value) {
         await submitOperation({
           type: "updateAttrs",
@@ -4403,8 +4460,8 @@ export function renderHomePage(): string {
           .map((node) => node.title + " (" + node.id + ")")
           .join("、");
         return (
-          "删除被拒绝：该父项目下存在更低权限用户仍可见的子项目。\\n" +
-          "请联系管理员申请权限，或者先处理 " + (childProjects || "相关子项目") + "。"
+          "删除被拒绝：该父项目下存在你无权删除的子项目。\\n" +
+          "请联系管理员申请高级删除冲突处理权限，或者先处理 " + (childProjects || "相关子项目") + "。"
         );
       }
 
@@ -4416,9 +4473,9 @@ export function renderHomePage(): string {
           .map((user) => "- " + user.name + " / " + user.role)
           .join("\\n");
         return (
-          "删除已阻止：该子树包含其他用户可见内容。\\n" +
+          "删除已阻止：该子树包含当前用户无权删除的内容。\\n" +
           "将删除节点数：" + impact.deleteCount + "\\n" +
-          "其他用户可见节点：\\n" + (visibleNodes || "- 无") + "\\n" +
+          "冲突节点：\\n" + (visibleNodes || "- 无") + "\\n" +
           "受影响用户：\\n" + (affectedUsers || "- 无")
         );
       }
@@ -4437,7 +4494,7 @@ export function renderHomePage(): string {
           els.deleteDialog.setAttribute("aria-hidden", "false");
           setStatus(
             impact.blocksSilentDelete
-              ? "检测到其他用户可见内容，请选择处理方式"
+              ? "检测到无权直接删除的子节点，请选择处理方式"
               : "请确认删除方式"
           );
         });
@@ -4529,8 +4586,12 @@ export function renderHomePage(): string {
 
       function showAddNodeDialog(parentNode) {
         return new Promise((resolve) => {
-          els.addNodeParentInfo.textContent = "父节点：" + quotedNodeTitle(parentNode.title || parentNode.id) + " — 新节点会默认带任务优先级、经费预算和状态属性。";
-          els.addNodeTitle.value = "新任务节点";
+          const title = els.addNodeDialog.querySelector(".modal-title");
+          if (title) title.textContent = parentNode ? "添加子节点" : "添加一级项目空间";
+          els.addNodeParentInfo.textContent = parentNode
+            ? "父节点：" + quotedNodeTitle(parentNode.title || parentNode.id) + " — 第三级任务会默认带任务优先级、经费预算和状态属性。"
+            : "新节点将作为一级项目空间添加到完整树根部。";
+          els.addNodeTitle.value = parentNode ? "新任务节点" : "新项目空间";
           buildAddNodeAclArea();
           els.addNodeDialog.classList.remove("hidden");
           els.addNodeDialog.setAttribute("aria-hidden", "false");
@@ -4910,6 +4971,14 @@ export function renderHomePage(): string {
           setStatus(error.message);
         }
       });
+      if (els.addRootNode) {
+        els.addRootNode.addEventListener("click", () =>
+          addRootNode().catch((error) => {
+            logOperationFailure({ type: "addNode", parentId: null, title: "一级节点" }, error);
+            setStatus(error.message);
+          })
+        );
+      }
       els.deleteDialogCancel.addEventListener("click", () => closeDeleteImpactDialog(null));
       els.deleteDialogKeepChildren.addEventListener("click", () => closeDeleteImpactDialog("keepChildren"));
       els.deleteDialogForce.addEventListener("click", () => closeDeleteImpactDialog("forceDelete"));

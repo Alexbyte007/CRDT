@@ -321,6 +321,7 @@ describe("concurrent heterogeneous view sync", () => {
   it("rejects concurrent edits and child adds after a confirmed cascade deletes a visible descendant", () => {
     const crdt = createSampleDocument();
     const admin = user("u-admin");
+    const manager = user("u-dev-manager");
     const member = user("u-dev-member");
     const context: CollaborationContext = {
       crdt,
@@ -359,8 +360,12 @@ describe("concurrent heterogeneous view sync", () => {
           nodeId: "node-cascade-parent",
           aclPatch: {
             visibility: "restricted",
-            allowedRoles: ["admin"],
-            childAddableRoles: ["admin"]
+            allowedRoles: ["admin", "manager"],
+            childAddableRoles: ["admin", "manager"],
+            deletableRoles: ["admin", "manager"],
+            advancedPermissions: {
+              deleteConflictResolverUserIds: ["u-dev-manager"]
+            }
           }
         },
         { now: 3 }
@@ -393,7 +398,8 @@ describe("concurrent heterogeneous view sync", () => {
             visibility: "restricted",
             allowedRoles: ["admin", "manager", "member"],
             contentEditableRoles: ["admin", "manager", "member"],
-            childAddableRoles: ["admin", "manager", "member"]
+            childAddableRoles: ["admin", "manager", "member"],
+            deletableRoles: ["admin"]
           }
         },
         { now: 5 }
@@ -405,10 +411,10 @@ describe("concurrent heterogeneous view sync", () => {
 
     expect(() =>
       applyBatchViewOperationRequest(context, {
-        user: admin,
+        user: manager,
         operations: [
           {
-            id: "admin-unconfirmed-cascade",
+            id: "manager-unconfirmed-cascade",
             baseStateVector,
             createdAt: 6,
             operation: {
@@ -421,11 +427,11 @@ describe("concurrent heterogeneous view sync", () => {
     ).not.toThrow();
     expect(getNodeSnapshot(crdt, "node-cascade-parent")).toBeDefined();
 
-    const adminDelete = applyBatchViewOperationRequest(context, {
-      user: admin,
+    const managerDelete = applyBatchViewOperationRequest(context, {
+      user: manager,
       operations: [
         {
-          id: "admin-confirmed-cascade",
+          id: "manager-confirmed-cascade",
           baseStateVector,
           createdAt: 7,
           operation: {
@@ -436,7 +442,7 @@ describe("concurrent heterogeneous view sync", () => {
         }
       ]
     });
-    expect(adminDelete.applied).toEqual(["admin-confirmed-cascade"]);
+    expect(managerDelete.applied).toEqual(["manager-confirmed-cascade"]);
 
     const memberReplay = applyBatchViewOperationRequest(context, {
       user: member,

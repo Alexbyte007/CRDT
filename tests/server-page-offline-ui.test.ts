@@ -35,6 +35,8 @@ describe("home page real offline controls", () => {
     expect(html).toContain("markCurrentUserSendingItemsPending");
     expect(html).toContain("logOfflineQueued");
     expect(html).toContain("logQueuedWaiting");
+    expect(html).toContain("localLogWithQueueEntries");
+    expect(html).toContain("正在发送：");
     expect(html).toContain("等待同步：");
     expect(html).toContain("网络不可用，操作已进入离线队列");
     expect(html).toContain("网络不可用，离线队列已保留，稍后会自动重试");

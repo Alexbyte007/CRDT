@@ -54,39 +54,53 @@ export function validateViewOperation(
   const policyEngine = options.policyEngine ?? defaultPolicyEngine;
   const target = getOperationTarget(crdt, operation);
 
-  if (!target) {
+  if (!target && !(operation.type === "addNode" && operation.parentId === null)) {
     throw new AccessControlError(`Operation target does not exist: ${getTargetId(operation)}`);
   }
 
+  const requireTarget = (): TreeNodeSnapshot => {
+    if (!target) {
+      throw new AccessControlError(`Operation target does not exist: ${getTargetId(operation)}`);
+    }
+    return target;
+  };
+
   switch (operation.type) {
     case "addNode":
-      ensureCanAddChildAtDepth(crdt, target);
-      ensureCanEdit(user, target, "addNode", policyEngine);
+      if (operation.parentId === null) {
+        if (user.role !== "admin") {
+          throw new AccessControlError(`User ${user.id} is not allowed to add root nodes.`);
+        }
+        return;
+      }
+      ensureCanAddChildAtDepth(crdt, requireTarget());
+      ensureCanEdit(user, requireTarget(), "addNode", policyEngine);
       return;
     case "deleteNode":
-      ensureCanEdit(user, target, "deleteNode", policyEngine);
+      ensureCanEdit(user, requireTarget(), "deleteNode", policyEngine);
       return;
     case "deleteNodeKeepChildren":
-      ensureCanEdit(user, target, "deleteNodeKeepChildren", policyEngine);
+      ensureCanEdit(user, requireTarget(), "deleteNodeKeepChildren", policyEngine);
       return;
     case "renameNode":
-      ensureCanEdit(user, target, "renameNode", policyEngine);
+      ensureCanEdit(user, requireTarget(), "renameNode", policyEngine);
       return;
     case "updateContent":
-      ensureCanEdit(user, target, "updateContent", policyEngine);
+      ensureCanEdit(user, requireTarget(), "updateContent", policyEngine);
       return;
     case "updateAttrs": {
-      ensureCanEdit(user, target, "updateAttrs", policyEngine);
+      const concreteTarget = requireTarget();
+      ensureCanEdit(user, concreteTarget, "updateAttrs", policyEngine);
       validateAttrsPatchShape(operation.attrsPatch);
-      ensureCanUpdateTaskAttrsAtDepth(crdt, target, operation.attrsPatch);
-      const sanitized = policyEngine.sanitizeAttrsPatch(user, target, operation.attrsPatch);
+      ensureCanUpdateTaskAttrsAtDepth(crdt, concreteTarget, operation.attrsPatch);
+      const sanitized = policyEngine.sanitizeAttrsPatch(user, concreteTarget, operation.attrsPatch);
       if (Object.keys(operation.attrsPatch).length > 0 && Object.keys(sanitized).length === 0) {
         throw new AccessControlError("No attrs in this patch are editable by the current user.");
       }
       return;
     }
     case "updateAcl":
-      ensureCanEdit(user, target, "updateAcl", policyEngine);
+      ensureCanEdit(user, requireTarget(), "updateAcl", policyEngine);
       sanitizeAclPatch(operation.aclPatch);
       return;
     default:
@@ -387,12 +401,13 @@ function getOperationTarget(
   operation: ViewOperation
 ): TreeNodeSnapshot | undefined {
   if (operation.type === "addNode") {
+    if (operation.parentId === null) return undefined;
     return getNodeSnapshot(crdt, operation.parentId);
   }
   return getNodeSnapshot(crdt, operation.nodeId);
 }
 
-function getTargetId(operation: ViewOperation): NodeId {
+function getTargetId(operation: ViewOperation): NodeId | null {
   return operation.type === "addNode" ? operation.parentId : operation.nodeId;
 }
 
@@ -416,12 +431,39 @@ function buildFullAddNodeOperation(
   timestamp: number,
   policyEngine: PolicyEngine
 ): AddNodeOperation {
-  const parent = requireSnapshot(crdt, operation.parentId);
-  ensureCanAddChildAtDepth(crdt, parent);
   const defaults = policyEngine.getAddNodeDefaults();
   const creatorAndHigherRoles = rolesAtOrAbove(user.role);
-  const parentDepth = getNodeDepth(crdt, parent);
-  const childType = parentDepth === 0 ? "folder" : "task";
+  const parent = operation.parentId === null ? null : requireSnapshot(crdt, operation.parentId);
+  if (parent) {
+    ensureCanAddChildAtDepth(crdt, parent);
+  } else if (user.role !== "admin") {
+    throw new AccessControlError(`User ${user.id} is not allowed to add root nodes.`);
+  }
+  const parentDepth = parent ? getNodeDepth(crdt, parent) : -1;
+  const childType = parent === null ? "folder" : parentDepth === 0 ? "folder" : "task";
+  const baseAcl: NodeAcl = {
+    visibility: parent ? resolveVisibilityDefault(defaults.visibility, parent) : "restricted",
+    allowedRoles: resolveVisibleRoleListDefault(defaults.allowedRoles, parent?.acl.allowedRoles ?? ["admin"]),
+    editableRoles: resolveOperationRoleListDefault(defaults.editableRoles, parent?.acl.editableRoles ?? ["admin"], creatorAndHigherRoles),
+    contentEditableRoles: resolveOperationRoleListDefault(
+      defaults.editableRoles,
+      parent?.acl.contentEditableRoles ?? parent?.acl.editableRoles ?? ["admin"],
+      creatorAndHigherRoles
+    ),
+    childAddableRoles: resolveOperationRoleListDefault(
+      defaults.editableRoles,
+      parent?.acl.childAddableRoles ?? parent?.acl.editableRoles ?? ["admin"],
+      creatorAndHigherRoles
+    ),
+    deletableRoles: resolveOperationRoleListDefault(
+      defaults.editableRoles,
+      parent?.acl.deletableRoles ?? parent?.acl.editableRoles ?? ["admin"],
+      creatorAndHigherRoles
+    ),
+    allowedUsers: resolveAllowedUsersDefault(defaults.allowedUsers, user),
+    deniedUsers: []
+  };
+  const aclPatch = operation.aclPatch ? sanitizeAclPatch(operation.aclPatch) : {};
   const node: NewTreeNode = {
     id: operation.nodeId ?? createNodeId(user.id, timestamp),
     type: childType,
@@ -430,7 +472,7 @@ function buildFullAddNodeOperation(
     attrs:
       childType === "task"
         ? {
-            department: resolveDepartmentDefault(defaults.department, parent),
+            department: parent ? resolveDepartmentDefault(defaults.department, parent) : "all",
             ownerId: resolveOwnerDefault(defaults.ownerId, user),
             tags: [],
             status: defaults.status,
@@ -440,33 +482,18 @@ function buildFullAddNodeOperation(
             ...sanitizeNewNodeAttrs(operation.attrs, true)
           }
         : {
-            department: resolveDepartmentDefault(defaults.department, parent),
+            department: parent ? resolveDepartmentDefault(defaults.department, parent) : "all",
             ownerId: resolveOwnerDefault(defaults.ownerId, user),
             tags: [],
             status: defaults.status,
             ...sanitizeNewNodeAttrs(operation.attrs, false)
           },
     acl: {
-      visibility: resolveVisibilityDefault(defaults.visibility, parent),
-      allowedRoles: resolveVisibleRoleListDefault(defaults.allowedRoles, parent.acl.allowedRoles),
-      editableRoles: resolveOperationRoleListDefault(defaults.editableRoles, parent.acl.editableRoles, creatorAndHigherRoles),
-      contentEditableRoles: resolveOperationRoleListDefault(
-        defaults.editableRoles,
-        parent.acl.contentEditableRoles ?? parent.acl.editableRoles,
-        creatorAndHigherRoles
-      ),
-      childAddableRoles: resolveOperationRoleListDefault(
-        defaults.editableRoles,
-        parent.acl.childAddableRoles ?? parent.acl.editableRoles,
-        creatorAndHigherRoles
-      ),
-      deletableRoles: resolveOperationRoleListDefault(
-        defaults.editableRoles,
-        parent.acl.deletableRoles ?? parent.acl.editableRoles,
-        creatorAndHigherRoles
-      ),
-      allowedUsers: resolveAllowedUsersDefault(defaults.allowedUsers, user),
-      deniedUsers: []
+      ...baseAcl,
+      ...aclPatch,
+      editableRoles: baseAcl.editableRoles,
+      allowedUsers: baseAcl.allowedUsers,
+      deniedUsers: baseAcl.deniedUsers
     },
     createdBy: user.id
   };

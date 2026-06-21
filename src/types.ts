@@ -215,12 +215,21 @@ export type ViewOperation =
 
 export interface ViewAddNodeOperation {
   type: "addNode";
-  parentId: NodeId;
+  parentId: NodeId | null;
   nodeId?: NodeId;
   nodeType?: NodeType;
   title: string;
   content?: string;
   attrs?: Partial<NodeAttrs>;
+  aclPatch?: Pick<
+    Partial<NodeAcl>,
+    | "visibility"
+    | "allowedRoles"
+    | "contentEditableRoles"
+    | "childAddableRoles"
+    | "deletableRoles"
+    | "advancedPermissions"
+  >;
   index?: number;
 }
 
