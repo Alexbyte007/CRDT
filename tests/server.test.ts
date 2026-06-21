@@ -162,7 +162,7 @@ describe("collaboration server", () => {
     expect(html).toContain("userManagement");
     expect(html).toContain("renderUserManagement");
     expect(html).toContain("updateUserRole");
-    expect(html).toContain("updateUserDepartment");
+    expect(html).not.toContain("updateUserDepartment");
     expect(html).toContain("deleteUserAccount");
     expect(html).toContain("/api/users/");
     expect(html).toContain("formatDeleteRejectedMessage");
@@ -1318,8 +1318,7 @@ describe("collaboration server", () => {
         ...authHeaders(admin.token)
       },
       body: JSON.stringify({
-        role: "guest",
-        department: "external"
+        role: "guest"
       })
     });
 
@@ -1392,8 +1391,7 @@ describe("collaboration server", () => {
           ...authHeaders(admin.token)
         },
         body: JSON.stringify({
-          role: "guest",
-          department: "external"
+          role: "guest"
         })
       });
       expect(updateResponse.status).toBe(200);
