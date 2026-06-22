@@ -76,6 +76,36 @@ describe("privacy-aware conflict resolution", () => {
     );
   });
 
+  it("merges concurrent markdown edits in different positions with Y.Text", () => {
+    const { left, right } = forkSampleDocument();
+    const baseContent = getNodeSnapshot(left, "node-public")?.content ?? "";
+
+    updateContent(left, {
+      type: "updateContent",
+      nodeId: "node-public",
+      baseContent,
+      content: baseContent + "\n\n管理员追加的说明。",
+      actorId: "u-admin",
+      timestamp: 2
+    });
+    updateContent(right, {
+      type: "updateContent",
+      nodeId: "node-public",
+      baseContent,
+      content: "研发经理补充：\n" + baseContent,
+      actorId: "u-dev-manager",
+      timestamp: 3
+    });
+
+    syncAndReconcile(left, right);
+
+    const merged = getNodeSnapshot(left, "node-public")?.content ?? "";
+    expect(merged).toContain("研发经理补充：");
+    expect(merged).toContain(baseContent);
+    expect(merged).toContain("管理员追加的说明。");
+    expect(getNodeSnapshot(right, "node-public")?.content).toBe(merged);
+  });
+
   it("uses delete-wins when a node is deleted concurrently with a content update", () => {
     const { left, right } = forkSampleDocument();
 

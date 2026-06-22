@@ -31,6 +31,11 @@ describe("home page hybrid tree UI", () => {
     expect(html).toContain("当前只支持三级结构，第三级节点不能再添加子节点");
     expect(html).toContain("当前模块任务筛选");
     expect(html).toContain("预算总额");
+    expect(html).toContain("批量更新当前筛选结果");
+    expect(html).toContain("批量设置优先级");
+    expect(html).toContain("批量设置状态");
+    expect(html).toContain("批量设置预算");
+    expect(html).toContain("applyBatchTaskAttr");
     expect(html).toContain("appendTaskAttrsPanel");
     expect(html).toContain("scheduleFilterRender");
     expect(html).toContain("preventScroll");

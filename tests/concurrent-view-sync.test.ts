@@ -10,6 +10,7 @@ import { createSampleDocument, sampleUsers } from "../src/fixtures/sample";
 import { applyBatchViewOperationRequest } from "../src/server/operations";
 import type { CollaborationContext } from "../src/server/types";
 import { ServerUndoManager } from "../src/server/undo";
+import { DEFAULT_TOMBSTONE_RETENTION_MS } from "../src/crdt/tombstone-gc";
 import { getView, putOperation } from "../src/view/transform";
 import type { UpdateAclOperation, User, ViewNode } from "../src/types";
 
@@ -194,7 +195,8 @@ describe("concurrent heterogeneous view sync", () => {
       sessions: new Map(),
       policyVersion: 1,
       policyEngine: defaultPolicyEngine,
-      undoManager: new ServerUndoManager()
+      undoManager: new ServerUndoManager(),
+      tombstoneRetentionMs: DEFAULT_TOMBSTONE_RETENTION_MS
     };
     const baseStateVector = encodeStateVector(crdt);
 
@@ -247,7 +249,8 @@ describe("concurrent heterogeneous view sync", () => {
       sessions: new Map(),
       policyVersion: 1,
       policyEngine: defaultPolicyEngine,
-      undoManager: new ServerUndoManager()
+      undoManager: new ServerUndoManager(),
+      tombstoneRetentionMs: DEFAULT_TOMBSTONE_RETENTION_MS
     };
     const baseStateVector = encodeStateVector(crdt);
 
@@ -332,7 +335,8 @@ describe("concurrent heterogeneous view sync", () => {
       sessions: new Map(),
       policyVersion: 1,
       policyEngine: defaultPolicyEngine,
-      undoManager: new ServerUndoManager()
+      undoManager: new ServerUndoManager(),
+      tombstoneRetentionMs: DEFAULT_TOMBSTONE_RETENTION_MS
     };
 
     applyFullDocOperation(

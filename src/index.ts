@@ -8,6 +8,7 @@ export * from "./crdt/operations";
 export * from "./crdt/conflicts";
 export * from "./crdt/snapshot";
 export * from "./crdt/state-vector";
+export * from "./crdt/tombstone-gc";
 export * from "./server/app";
 export * from "./server/types";
 export * from "./view/transform";
