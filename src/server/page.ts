@@ -1297,6 +1297,7 @@ export function renderHomePage(): string {
           lastPongAt: 0,
           lastSyncAt: 0,
           reconnectingFromFailure: false,
+          needsRecoveryLog: false,
           syncInFlight: false,
           queue: loadStoredOfflineQueue()
         },
@@ -2357,6 +2358,142 @@ export function renderHomePage(): string {
           if (found) return found;
         }
         return null;
+      }
+
+      function findNodePathById(nodeId, nodes, path) {
+        const currentPath = path || [];
+        for (let index = 0; index < (nodes || []).length; index += 1) {
+          const node = nodes[index];
+          const nextPath = currentPath.concat([{ nodes, index, node }]);
+          if (node.id === nodeId) return nextPath;
+          const found = findNodePathById(nodeId, node.children || [], nextPath);
+          if (found) return found;
+        }
+        return null;
+      }
+
+      function viewNodeDepth(nodeId) {
+        if (!state.view) return -1;
+        const path = findNodePathById(nodeId, state.view.roots, []);
+        return path ? path.length - 1 : -1;
+      }
+
+      function createClientNodeId() {
+        return "node-local-" + currentUserId() + "-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+      }
+
+      function ensureAddOperationNodeId(operation) {
+        if (operation && operation.type === "addNode" && !operation.nodeId) {
+          operation.nodeId = createClientNodeId();
+        }
+      }
+
+      function localPermissionsForNewNode(parent, depth) {
+        return {
+          canView: true,
+          canRename: true,
+          canEditContent: true,
+          canEditAttrs: depth >= 2,
+          canEditAcl: Boolean(parent && parent.permissions && parent.permissions.canEditAcl),
+          canAddChild: depth < 2,
+          canDelete: true
+        };
+      }
+
+      function optimisticNodeFromAddOperation(operation, parent, depth) {
+        const isTask = depth >= 2 || operation.nodeType === "task";
+        return {
+          id: operation.nodeId,
+          parentId: operation.parentId,
+          type: isTask ? "task" : "folder",
+          title: operation.title || "新节点",
+          content: operation.content || "",
+          attrs: isTask
+            ? {
+                priority: "C",
+                budget: 0,
+                taskStatus: "todo",
+                ...(operation.attrs || {})
+              }
+            : {},
+          acl: parent && parent.acl ? { ...parent.acl, ...(operation.aclPatch || {}) } : undefined,
+          permissions: localPermissionsForNewNode(parent, depth),
+          children: [],
+          optimistic: true
+        };
+      }
+
+      function removeNodeFromView(nodeId, keepChildren) {
+        if (!state.view) return false;
+        const path = findNodePathById(nodeId, state.view.roots, []);
+        if (!path || path.length === 0) return false;
+        const entry = path[path.length - 1];
+        const removed = entry.nodes.splice(entry.index, 1)[0];
+        if (keepChildren && removed && removed.children && removed.children.length > 0) {
+          for (const child of removed.children) {
+            child.parentId = removed.parentId || null;
+          }
+          entry.nodes.splice(entry.index, 0, ...removed.children);
+        }
+        delete state.editing.drafts[nodeId];
+        if (state.markdownEditor.activeNodeId === nodeId) {
+          state.markdownEditor.activeNodeId = null;
+        }
+        return true;
+      }
+
+      function applyOptimisticOperation(operation) {
+        if (!state.view || !operation || !operation.type) return false;
+
+        if (operation.type === "addNode") {
+          ensureAddOperationNodeId(operation);
+          if (findNodeById(operation.nodeId, state.view.roots)) return false;
+          if (operation.parentId === null) {
+            const node = optimisticNodeFromAddOperation(operation, null, 0);
+            const index = Number.isFinite(operation.index) ? Math.max(0, Math.min(operation.index, state.view.roots.length)) : state.view.roots.length;
+            state.view.roots.splice(index, 0, node);
+            state.treeUi.expandedDetailNodeIds[node.id] = true;
+            return true;
+          }
+          const parent = findNodeById(operation.parentId, state.view.roots);
+          if (!parent) return false;
+          const depth = viewNodeDepth(parent.id) + 1;
+          parent.children = parent.children || [];
+          const node = optimisticNodeFromAddOperation(operation, parent, depth);
+          const index = Number.isFinite(operation.index) ? Math.max(0, Math.min(operation.index, parent.children.length)) : parent.children.length;
+          parent.children.splice(index, 0, node);
+          state.treeUi.expandedTreeNodeIds[parent.id] = true;
+          state.treeUi.expandedDetailNodeIds[node.id] = true;
+          return true;
+        }
+
+        if (operation.type === "deleteNode") {
+          return removeNodeFromView(operation.nodeId, false);
+        }
+
+        if (operation.type === "deleteNodeKeepChildren") {
+          return removeNodeFromView(operation.nodeId, true);
+        }
+
+        const node = findNodeById(operation.nodeId, state.view.roots);
+        if (!node) return false;
+        if (operation.type === "renameNode") {
+          node.title = operation.title;
+          return true;
+        }
+        if (operation.type === "updateContent") {
+          node.content = operation.content;
+          return true;
+        }
+        if (operation.type === "updateAttrs") {
+          node.attrs = { ...(node.attrs || {}) };
+          for (const [key, value] of Object.entries(operation.attrsPatch || {})) {
+            if (value === undefined) delete node.attrs[key];
+            else node.attrs[key] = value;
+          }
+          return true;
+        }
+        return false;
       }
 
       function activeMarkdownNode() {
@@ -4877,11 +5014,13 @@ export function renderHomePage(): string {
           renderSyncState();
           return;
         }
+        ensureAddOperationNodeId(operation);
         const envelope = createEnvelope(operation);
+        const summary = formatViewOperation(operation, customLogTitle);
         state.offline.queue.push(envelope);
+        const optimisticApplied = applyOptimisticOperation(operation);
         saveOfflineQueue();
         renderSyncState();
-        const summary = formatViewOperation(operation, customLogTitle);
         appendOperationLog({
           kind: "local",
           operator: state.user ? state.user.name : "",
@@ -4889,7 +5028,17 @@ export function renderHomePage(): string {
           detail: summary.detail,
           coalesceKey: "local:" + operation.type + ":" + targetNodeIdFromOperation(operation)
         });
-        renderOperationLogs();
+        if (optimisticApplied) {
+          appendOperationLog({
+            kind: "local",
+            title: "本地视图已更新",
+            detail: summary.title + "；联网后会与服务端重新校验合并",
+            coalesceKey: "optimistic:" + envelope.id
+          });
+          render();
+        } else {
+          renderOperationLogs();
+        }
         if (isConnectionUsable()) {
           if (sendQueuedOperation(envelope)) {
             setStatus("操作已发送，等待确认");
@@ -5213,6 +5362,7 @@ export function renderHomePage(): string {
         state.socket = null;
         state.offline.connected = false;
         state.offline.connectionStatus = "offline";
+        state.offline.needsRecoveryLog = true;
         markCurrentUserSendingItemsPending("连接断开，等待恢复联网后重试");
         if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
           socket.close();
@@ -5246,6 +5396,7 @@ export function renderHomePage(): string {
         state.socket = null;
         state.offline.connected = false;
         state.offline.connectionStatus = "stale";
+        state.offline.needsRecoveryLog = true;
         markCurrentUserSendingItemsPending("心跳超时，等待恢复联网后重试");
         if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
           socket.close();
@@ -5302,11 +5453,12 @@ export function renderHomePage(): string {
         socket.onmessage = (event) => {
           const message = JSON.parse(event.data);
           if (message.type === "pong") {
-            const wasReconnecting = state.offline.reconnectingFromFailure;
+            const wasReconnecting = state.offline.reconnectingFromFailure || state.offline.needsRecoveryLog;
             state.offline.lastPongAt = Date.now();
             state.offline.connected = true;
             state.offline.connectionStatus = "connected";
             state.offline.reconnectingFromFailure = false;
+            state.offline.needsRecoveryLog = false;
             if (wasReconnecting) {
               appendOperationLog({
                 kind: "remote",
@@ -5421,6 +5573,10 @@ export function renderHomePage(): string {
             setStatus(message.error.message);
             if (message.error.name === "AuthenticationError") {
               logout();
+            } else {
+              loadView()
+                .then(() => render())
+                .catch((error) => setStatus(error.message));
             }
           }
         };
@@ -5438,6 +5594,7 @@ export function renderHomePage(): string {
           state.socket = null;
           state.offline.connected = false;
           state.offline.reconnectingFromFailure = true;
+          state.offline.needsRecoveryLog = true;
           state.undo.undoInFlight = false;
           state.undo.redoInFlight = false;
           markCurrentUserSendingItemsPending("WebSocket 已断开，等待恢复联网后重试");
@@ -5455,6 +5612,7 @@ export function renderHomePage(): string {
           state.socket = null;
           state.offline.connected = false;
           state.offline.reconnectingFromFailure = true;
+          state.offline.needsRecoveryLog = true;
           state.undo.undoInFlight = false;
           state.undo.redoInFlight = false;
           state.offline.connectionStatus = "offline";
