@@ -10,3 +10,21 @@ server.log
 data/
 .pdf_text.txt
 .ppt_text.txt
+
+# Presentation drafts, course handouts, and local demo assets should stay out of git.
+*.ppt
+*.pptx
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.txt
+开发过程图片素材/
+docs/superpowers/
+tools/
