@@ -56,7 +56,7 @@ export function createYNode(snapshot: TreeNodeSnapshot): Y.Map<unknown> {
   node.set("parentId", snapshot.parentId);
   node.set("type", snapshot.type);
   node.set("title", snapshot.title);
-  node.set("content", snapshot.content);
+  node.set("content", textFromString(snapshot.content));
   node.set("attrs", mapFromRecord(snapshot.attrs));
   node.set("acl", mapFromRecord(snapshot.acl));
   node.set("children", arrayFromValues(snapshot.children));
@@ -105,13 +105,24 @@ export function getAclMap(node: Y.Map<unknown>): Y.Map<unknown> {
   return acl;
 }
 
+export function getContentText(node: Y.Map<unknown>): Y.Text {
+  const content = node.get("content");
+  if (content instanceof Y.Text) {
+    return content;
+  }
+
+  const text = textFromString(typeof content === "string" ? content : "");
+  node.set("content", text);
+  return text;
+}
+
 export function yNodeToSnapshot(node: Y.Map<unknown>): TreeNodeSnapshot {
   return {
     id: requireString(node.get("id"), "node.id"),
     parentId: nullableString(node.get("parentId"), "node.parentId"),
     type: requireString(node.get("type"), "node.type") as TreeNodeSnapshot["type"],
     title: requireString(node.get("title"), "node.title"),
-    content: requireString(node.get("content"), "node.content"),
+    content: contentToString(node.get("content")),
     attrs: recordFromMap<NodeAttrs>(getRequiredMap(node, "attrs")),
     acl: recordFromMap<NodeAcl>(getRequiredMap(node, "acl")),
     children: getChildrenArray(node).toArray(),
@@ -145,6 +156,21 @@ function arrayFromValues<T>(values: T[]): Y.Array<T> {
     array.insert(0, values);
   }
   return array;
+}
+
+function textFromString(value: string): Y.Text {
+  const text = new Y.Text();
+  if (value.length > 0) {
+    text.insert(0, value);
+  }
+  return text;
+}
+
+function contentToString(value: unknown): string {
+  if (value instanceof Y.Text) {
+    return value.toString();
+  }
+  return requireString(value, "node.content");
 }
 
 function getRequiredMap(node: Y.Map<unknown>, key: string): Y.Map<unknown> {

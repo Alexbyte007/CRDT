@@ -16,6 +16,7 @@ import { ServerUndoManager } from "../src/server/undo";
 import { applyRedoRequest, applyUndoRequest } from "../src/server/operations";
 import { AccessControlError, type User, type UserRole } from "../src/types";
 import type { CollaborationContext } from "../src/server/types";
+import { compactTombstones, DEFAULT_TOMBSTONE_RETENTION_MS } from "../src/crdt/tombstone-gc";
 
 const ALLOWED_ROLES: UserRole[] = ["admin", "manager", "member"];
 const EDITABLE_ROLES: UserRole[] = ["admin", "manager"];
@@ -30,7 +31,8 @@ function createTestContext(crdt: ReturnType<typeof createSampleDocument>): Colla
     sessions: new Map(),
     policyVersion: 1,
     policyEngine: defaultPolicyEngine,
-    undoManager: new ServerUndoManager({ maxDepth: 50 })
+    undoManager: new ServerUndoManager({ maxDepth: 50 }),
+    tombstoneRetentionMs: DEFAULT_TOMBSTONE_RETENTION_MS
   };
 }
 
@@ -346,6 +348,32 @@ describe("ServerUndoManager", () => {
     }
 
     expect(mgr.getUserEntries(user("manager").id).length).toBe(3);
+  });
+
+  it("reports tombstones protected by undo and redo history", () => {
+    const crdt = createSampleDocument();
+    const ctx = createTestContext(crdt);
+    const manager = user("manager");
+    const deleteOp = {
+      type: "deleteNode" as const,
+      nodeId: "node-public",
+      actorId: manager.id,
+      timestamp: 1_000
+    };
+
+    ctx.undoManager.track(manager.id, deleteOp, ctx);
+    deleteNode(crdt, deleteOp);
+
+    expect(ctx.undoManager.getProtectedTombstoneIds()).toContain("node-public");
+
+    const result = compactTombstones(crdt, {
+      now: 100_000,
+      retentionMs: 1,
+      protectedNodeIds: ctx.undoManager.getProtectedTombstoneIds()
+    });
+
+    expect(result.removed).not.toContain("node-public");
+    expect(crdt.tombstones.has("node-public")).toBe(true);
   });
 
   it("canUndo returns false for empty stack", () => {

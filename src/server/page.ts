@@ -651,6 +651,13 @@ export function renderHomePage(): string {
     }
     .module-stat span { color: var(--muted); font-size: 11px; font-weight: 800; }
     .module-stat strong { font-size: 14px; }
+    .module-batch-panel {
+      display: grid; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line);
+    }
+    .module-batch-row {
+      display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center;
+    }
+    .module-batch-row .btn { width: auto; min-height: 34px; padding: 6px 10px; }
     .markdown-drawer-backdrop {
       position: fixed; inset: 0; z-index: 60; display: flex; justify-content: flex-end;
       padding: 18px; background: rgba(15, 23, 42, .28);
@@ -2574,7 +2581,118 @@ export function renderHomePage(): string {
           stats.appendChild(renderModuleStat("平均预算", filteredStats.budgetCount ? filteredStats.budgetAverage.toFixed(2) : "-"));
         }
         panel.appendChild(stats);
+        appendModuleBatchUpdatePanel(panel, node, filteredTasks);
         container.appendChild(panel);
+      }
+
+      function appendModuleBatchUpdatePanel(panel, moduleNode, filteredTasks) {
+        const editableTasks = filteredTasks.filter((task) => task.permissions && task.permissions.canEditContent);
+        const section = document.createElement("div");
+        section.className = "module-batch-panel";
+
+        const head = document.createElement("div");
+        head.className = "node-markdown-preview-head";
+        const title = document.createElement("span");
+        title.textContent = "批量更新当前筛选结果";
+        const scope = document.createElement("span");
+        scope.textContent = "筛选 " + filteredTasks.length + " 个，可编辑 " + editableTasks.length + " 个";
+        head.appendChild(title);
+        head.appendChild(scope);
+        section.appendChild(head);
+
+        const controls = document.createElement("div");
+        controls.className = "module-filter-grid";
+        controls.appendChild(renderBatchSelectControl(moduleNode, editableTasks, "priority", "批量设置优先级", [
+          { value: "", label: "选择优先级" },
+          { value: "A", label: "A 级" },
+          { value: "B", label: "B 级" },
+          { value: "C", label: "C 级" }
+        ]));
+        controls.appendChild(renderBatchSelectControl(moduleNode, editableTasks, "taskStatus", "批量设置状态", [
+          { value: "", label: "选择状态" },
+          { value: "todo", label: "待办" },
+          { value: "doing", label: "进行中" },
+          { value: "done", label: "已完成" }
+        ]));
+        controls.appendChild(renderBatchBudgetControl(moduleNode, editableTasks));
+        section.appendChild(controls);
+
+        if (filteredTasks.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "status";
+          empty.textContent = "当前筛选结果为空，无法批量更新。";
+          section.appendChild(empty);
+        } else if (editableTasks.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "status";
+          empty.textContent = "当前筛选结果无可编辑任务。";
+          section.appendChild(empty);
+        }
+
+        panel.appendChild(section);
+      }
+
+      function renderBatchSelectControl(moduleNode, editableTasks, attrName, labelText, options) {
+        const label = document.createElement("label");
+        label.textContent = labelText;
+        const row = document.createElement("div");
+        row.className = "module-batch-row";
+        let selectedValue = "";
+        const customSelect = createCustomSelect(
+          options,
+          "",
+          (newValue) => {
+            selectedValue = newValue;
+          },
+          editableTasks.length === 0
+        );
+        customSelect.element.dataset.moduleBatch = attrName;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "btn small secondary";
+        button.textContent = "应用";
+        button.disabled = editableTasks.length === 0;
+        button.addEventListener("click", () => {
+          if (!selectedValue) {
+            setStatus("请选择要批量设置的" + labelText.replace("批量设置", ""));
+            return;
+          }
+          applyBatchTaskAttr(moduleNode, editableTasks, attrName, selectedValue);
+        });
+        row.appendChild(customSelect.element);
+        row.appendChild(button);
+        label.appendChild(row);
+        return label;
+      }
+
+      function renderBatchBudgetControl(moduleNode, editableTasks) {
+        const label = document.createElement("label");
+        label.textContent = "批量设置预算";
+        const row = document.createElement("div");
+        row.className = "module-batch-row";
+        const input = document.createElement("input");
+        input.type = "number";
+        input.min = "0";
+        input.step = "100";
+        input.placeholder = "输入预算";
+        input.dataset.moduleBatch = "budget";
+        input.disabled = editableTasks.length === 0;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "btn small secondary";
+        button.textContent = "应用";
+        button.disabled = editableTasks.length === 0;
+        button.addEventListener("click", () => {
+          if (input.value === "" || Number.isNaN(Number(input.value)) || Number(input.value) < 0) {
+            setStatus("请输入有效预算");
+            return;
+          }
+          applyBatchTaskAttr(moduleNode, editableTasks, "budget", Number(input.value));
+        });
+        row.appendChild(input);
+        row.appendChild(button);
+        label.appendChild(row);
+        return label;
       }
 
       function renderModuleFilterSelect(nodeId, key, labelText, options, value) {
@@ -4301,7 +4419,7 @@ export function renderHomePage(): string {
         }
 
         if (content !== draft.originalContent) {
-          operations.push({ type: "updateContent", nodeId, content });
+          operations.push({ type: "updateContent", nodeId, baseContent: draft.originalContent, content });
           draft.originalContent = content;
         }
 
@@ -4366,6 +4484,31 @@ export function renderHomePage(): string {
             [attrName]: value
           }
         }, "更新任务属性");
+      }
+
+      async function applyBatchTaskAttr(moduleNode, editableTasks, attrName, value) {
+        if (!editableTasks || editableTasks.length === 0) {
+          setStatus("当前筛选结果无可编辑任务");
+          return;
+        }
+        let queued = 0;
+        for (const task of editableTasks) {
+          await submitOperation({
+            type: "updateAttrs",
+            nodeId: task.id,
+            attrsPatch: {
+              [attrName]: value
+            }
+          }, "批量更新筛选任务");
+          queued += 1;
+        }
+        setStatus(
+          "已为「" +
+            (moduleNode.title || moduleNode.id) +
+            "」当前筛选结果生成 " +
+            queued +
+            " 个写回操作"
+        );
       }
 
       async function updateUserRole(userId, role) {

@@ -12,6 +12,7 @@ import {
 } from "../src/crdt/operations";
 import { createCrdtDocument, fromYDoc } from "../src/crdt/document";
 import { getDocumentSnapshot, getNodeSnapshot } from "../src/crdt/snapshot";
+import { compactTombstones } from "../src/crdt/tombstone-gc";
 
 describe("Yjs JSON tree document operations", () => {
   it("creates the expected sample tree", () => {
@@ -162,6 +163,56 @@ describe("Yjs JSON tree document operations", () => {
     ]);
     expect(snapshot.tombstones["node-dev-plan"].updatedAt).toBe(6);
     expect(snapshot.tombstones["node-module-a"].updatedAt).toBe(6);
+  });
+
+  it("compacts tombstones older than the retention window", () => {
+    const crdt = createSampleDocument();
+
+    deleteNode(crdt, {
+      type: "deleteNode",
+      nodeId: "node-dev-plan",
+      actorId: "u-admin",
+      timestamp: 1_000
+    });
+
+    const result = compactTombstones(crdt, {
+      now: 11_000,
+      retentionMs: 5_000
+    });
+
+    expect(result.removed).toContain("node-dev-plan");
+    expect(result.removed).toContain("node-module-a");
+    expect(crdt.tombstones.has("node-dev-plan")).toBe(false);
+    expect(crdt.tombstones.has("node-module-a")).toBe(false);
+  });
+
+  it("keeps recent and protected tombstones during compaction", () => {
+    const crdt = createSampleDocument();
+
+    deleteNode(crdt, {
+      type: "deleteNode",
+      nodeId: "node-dev-plan",
+      actorId: "u-admin",
+      timestamp: 1_000
+    });
+
+    const result = compactTombstones(crdt, {
+      now: 11_000,
+      retentionMs: 5_000,
+      protectedNodeIds: ["node-module-a"]
+    });
+
+    expect(result.removed).toContain("node-dev-plan");
+    expect(result.removed).not.toContain("node-module-a");
+    expect(crdt.tombstones.has("node-dev-plan")).toBe(false);
+    expect(crdt.tombstones.has("node-module-a")).toBe(true);
+
+    const recentResult = compactTombstones(crdt, {
+      now: 12_000,
+      retentionMs: 20_000
+    });
+    expect(recentResult.removed).toEqual([]);
+    expect(crdt.tombstones.has("node-module-a")).toBe(true);
   });
 
   it("deletes a node while keeping its children attached to the former parent", () => {

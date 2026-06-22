@@ -25,6 +25,7 @@ export interface CollaborationServerOptions {
   userAccounts?: UserAccount[];
   now?: () => number;
   documentStore?: Pick<SqliteDocumentStore, "save" | "saveUserAccount" | "deleteUserAccount">;
+  tombstoneRetentionMs?: number;
 }
 
 export interface CollaborationServer {
@@ -44,6 +45,7 @@ export interface CollaborationContext {
   policyEngine: PolicyEngine;
   accountStore?: Pick<SqliteDocumentStore, "saveUserAccount" | "deleteUserAccount">;
   undoManager: ServerUndoManager;
+  tombstoneRetentionMs: number;
 }
 
 export interface SessionInfo {

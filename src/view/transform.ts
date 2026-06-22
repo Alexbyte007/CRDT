@@ -148,6 +148,7 @@ export function putOperation(
       return {
         type: "updateContent",
         nodeId: operation.nodeId,
+        baseContent: operation.baseContent,
         content: operation.content,
         actorId: user.id,
         timestamp

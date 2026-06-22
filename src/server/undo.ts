@@ -129,6 +129,24 @@ export class ServerUndoManager {
     return [...(this.redoStacks.get(scopeId) ?? [])];
   }
 
+  getProtectedTombstoneIds(): Set<string> {
+    const protectedIds = new Set<string>();
+    const collect = (entry: UndoEntry) => {
+      for (const nodeId of tombstoneIdsForEntry(entry)) {
+        protectedIds.add(nodeId);
+      }
+    };
+
+    for (const stack of this.stacks.values()) {
+      stack.forEach(collect);
+    }
+    for (const stack of this.redoStacks.values()) {
+      stack.forEach(collect);
+    }
+
+    return protectedIds;
+  }
+
   /**
    * Remove entries that reference now-invalid state.
    */
@@ -376,4 +394,18 @@ export class ServerUndoManager {
         return true;
     }
   }
+}
+
+function tombstoneIdsForEntry(entry: UndoEntry): string[] {
+  const state = entry.capturedState;
+  if (state.kind === "deleteNode") {
+    return state.subtreeSnapshots.map((snapshot) => snapshot.id);
+  }
+  if (state.kind === "deleteNodeKeepChildren") {
+    return [state.nodeId];
+  }
+  if (state.kind === "addNode") {
+    return [state.nodeId];
+  }
+  return [];
 }

@@ -125,6 +125,7 @@ export interface RenameNodeOperation {
 export interface UpdateContentOperation {
   type: "updateContent";
   nodeId: NodeId;
+  baseContent?: string;
   content: string;
   actorId: UserId;
   timestamp?: number;
@@ -253,6 +254,7 @@ export interface ViewRenameNodeOperation {
 export interface ViewUpdateContentOperation {
   type: "updateContent";
   nodeId: NodeId;
+  baseContent?: string;
   content: string;
 }
 

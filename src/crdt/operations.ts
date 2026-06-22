@@ -22,6 +22,7 @@ import {
   getAclMap,
   getAttrsMap,
   getChildrenArray,
+  getContentText,
   getNodeMap,
   touchDocument,
   touchNode,
@@ -208,12 +209,133 @@ export function updateContent(
   const node = requireNode(crdt, operation.nodeId);
 
   crdt.doc.transact(() => {
-    node.set("content", operation.content);
+    const content = getContentText(node);
+    applyTextReplacement(content, operation.baseContent, operation.content);
     touchNode(node, operation.actorId, timestamp);
     touchDocument(crdt, timestamp);
   });
 
   return yNodeToSnapshot(node);
+}
+
+function applyTextReplacement(text: Y.Text, baseContent: string | undefined, nextContent: string): void {
+  const currentContent = text.toString();
+  if (baseContent === undefined) {
+    if (currentContent.length > 0) {
+      text.delete(0, currentContent.length);
+    }
+    if (nextContent.length > 0) {
+      text.insert(0, nextContent);
+    }
+    return;
+  }
+
+  const base = baseContent ?? currentContent;
+  const patch = diffReplacement(base, nextContent);
+  const start = mapPatchStartToCurrent(currentContent, patch);
+  const deleteLength = mapDeleteLengthToCurrent(currentContent, patch, start);
+  if (deleteLength > 0) {
+    text.delete(start, deleteLength);
+  }
+  if (patch.insertText.length > 0) {
+    text.insert(start, patch.insertText);
+  }
+}
+
+function diffReplacement(baseContent: string, nextContent: string): {
+  start: number;
+  deleteLength: number;
+  insertText: string;
+  prefix: string;
+  removedText: string;
+  suffix: string;
+} {
+  let start = 0;
+  const baseLength = baseContent.length;
+  const nextLength = nextContent.length;
+
+  while (
+    start < baseLength &&
+    start < nextLength &&
+    baseContent[start] === nextContent[start]
+  ) {
+    start += 1;
+  }
+
+  let baseEnd = baseLength;
+  let nextEnd = nextLength;
+  while (
+    baseEnd > start &&
+    nextEnd > start &&
+    baseContent[baseEnd - 1] === nextContent[nextEnd - 1]
+  ) {
+    baseEnd -= 1;
+    nextEnd -= 1;
+  }
+
+  return {
+    start,
+    deleteLength: baseEnd - start,
+    insertText: nextContent.slice(start, nextEnd),
+    prefix: baseContent.slice(0, start),
+    removedText: baseContent.slice(start, baseEnd),
+    suffix: baseContent.slice(baseEnd)
+  };
+}
+
+function mapPatchStartToCurrent(
+  currentContent: string,
+  patch: ReturnType<typeof diffReplacement>
+): number {
+  if (patch.prefix.length > 0 && patch.suffix.length > 0) {
+    const prefixIndex = currentContent.indexOf(patch.prefix);
+    if (prefixIndex >= 0) {
+      const afterPrefix = prefixIndex + patch.prefix.length;
+      const suffixIndex = currentContent.indexOf(patch.suffix, afterPrefix);
+      if (suffixIndex >= 0) {
+        return afterPrefix;
+      }
+    }
+  }
+
+  if (patch.prefix.length > 0) {
+    const prefixIndex = currentContent.lastIndexOf(patch.prefix);
+    if (prefixIndex >= 0) {
+      return prefixIndex + patch.prefix.length;
+    }
+  }
+
+  if (patch.suffix.length > 0) {
+    const suffixIndex = currentContent.indexOf(patch.suffix);
+    if (suffixIndex >= 0) {
+      return suffixIndex;
+    }
+  }
+
+  return Math.min(patch.start, currentContent.length);
+}
+
+function mapDeleteLengthToCurrent(
+  currentContent: string,
+  patch: ReturnType<typeof diffReplacement>,
+  start: number
+): number {
+  if (patch.deleteLength <= 0) {
+    return 0;
+  }
+
+  if (patch.removedText.length > 0 && currentContent.slice(start, start + patch.removedText.length) === patch.removedText) {
+    return patch.removedText.length;
+  }
+
+  if (patch.suffix.length > 0) {
+    const suffixIndex = currentContent.indexOf(patch.suffix, start);
+    if (suffixIndex >= start) {
+      return suffixIndex - start;
+    }
+  }
+
+  return Math.min(patch.deleteLength, Math.max(0, currentContent.length - start));
 }
 
 export function updateAttrs(crdt: CrdtDocument, operation: UpdateAttrsOperation): TreeNodeSnapshot {
