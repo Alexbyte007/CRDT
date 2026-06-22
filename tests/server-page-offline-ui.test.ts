@@ -26,6 +26,7 @@ describe("home page real offline controls", () => {
     expect(html).toContain("MAX_QUEUE_SIZE");
     expect(html).toContain("sendHeartbeat");
     expect(html).toContain("lastPongAt");
+    expect(html).toContain("needsRecoveryLog");
     expect(html).toContain("markConnectionStale");
     expect(html).toContain("HEARTBEAT_INTERVAL_MS = 5_000");
     expect(html).toContain("HEARTBEAT_TIMEOUT_MS = 15_000");
@@ -47,8 +48,23 @@ describe("home page real offline controls", () => {
     expect(html).toContain("已跳过：");
     expect(html).toContain("已拒绝：");
     expect(html).toContain("心跳超时");
+    expect(html).toContain("连接已恢复");
+    expect(html).toContain("已收到服务器心跳响应，开始同步离线队列");
     expect(html).toContain("最后心跳");
     expect(html).toContain("最后同步");
+  });
+
+  it("optimistically applies offline tree operations before server confirmation", () => {
+    const html = renderHomePage();
+
+    expect(html).toContain("applyOptimisticOperation");
+    expect(html).toContain("optimisticNodeFromAddOperation");
+    expect(html).toContain("ensureAddOperationNodeId");
+    expect(html).toContain("createClientNodeId");
+    expect(html).toContain("removeNodeFromView");
+    expect(html).toContain("本地视图已更新");
+    expect(html).toContain("联网后会与服务端重新校验合并");
+    expect(html).toContain("loadView()");
   });
 
   it("guards undo and redo against repeated clicks while a request is in flight", () => {
