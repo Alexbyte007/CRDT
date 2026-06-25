@@ -1,4 +1,4 @@
-import { AddressInfo } from "node:net";
+import type { AddressInfo } from "node:net";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
