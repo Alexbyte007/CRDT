@@ -255,7 +255,7 @@ function handleClientMessage(
   }
 
   if (message.type === "undoStatus") {
-    const user = requireUser(context, client.userId);
+    requireUser(context, client.userId);
     sendServerMessage(client.socket, {
       type: "undoStatus",
       canUndo: context.undoManager.canUndo(client.undoScopeId),

@@ -2027,7 +2027,7 @@ export function renderHomePage(): string {
       }
 
       function escapeAttr(value) {
-        return String(value).replace(/[^\w#,()\-.\s]/g, "");
+        return String(value).replace(/[^A-Za-z0-9_#,().\s-]/g, "");
       }
 
       function render() {

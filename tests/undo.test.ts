@@ -5,16 +5,13 @@ import {
   applyFullDocOperation,
   deleteNode,
   deleteNodeKeepChildren,
-  renameNode,
-  updateAcl,
-  updateAttrs,
-  updateContent
+  renameNode
 } from "../src/crdt/operations";
-import { getDocumentSnapshot, getNodeSnapshot } from "../src/crdt/snapshot";
+import { getNodeSnapshot } from "../src/crdt/snapshot";
 import { defaultPolicyEngine } from "../src/access-control/default-policy";
 import { ServerUndoManager } from "../src/server/undo";
 import { applyRedoRequest, applyUndoRequest } from "../src/server/operations";
-import { AccessControlError, type User, type UserRole } from "../src/types";
+import type { User, UserRole } from "../src/types";
 import type { CollaborationContext } from "../src/server/types";
 import { compactTombstones, DEFAULT_TOMBSTONE_RETENTION_MS } from "../src/crdt/tombstone-gc";
 
@@ -435,7 +432,7 @@ describe("resurrectNode CRDT operation", () => {
     expect(crdt.nodes.has("node-dev-plan")).toBe(false);
 
     // Resurrect it
-    const result = applyFullDocOperation(crdt, {
+    applyFullDocOperation(crdt, {
       type: "resurrectNode",
       nodeId: "node-dev-plan",
       subtreeNodes: subtreeSnapshots,

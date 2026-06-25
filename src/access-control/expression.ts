@@ -155,13 +155,13 @@ class Parser {
 
   private parseNot(): unknown {
     if (this.matchIdentifier("not")) {
-      return !Boolean(this.parseNot());
+      return !this.parseNot();
     }
     return this.parseComparison();
   }
 
   private parseComparison(): unknown {
-    let left = this.parsePrimary();
+    const left = this.parsePrimary();
     const token = this.peek();
 
     if (token.type === "identifier" && token.value === "in") {
